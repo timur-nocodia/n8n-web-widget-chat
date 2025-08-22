@@ -79,3 +79,7 @@ Thumbs.db
 *.pem
 *.key
 *.crt
+
+# Other
+/.playwright-mcp
+/.claude
