@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeChat Widget - Embed Demo</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        .hero {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+        .hero h1 {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            background: linear-gradient(45deg, #fff, #f0f8ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .hero p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            margin-bottom: 2rem;
+        }
+        .demo-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        .code-block {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            overflow-x: auto;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .code-block pre {
+            margin: 0;
+            color: #e6f3ff;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+        }
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            margin-top: 40px;
+        }
+        .feature-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: transform 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-10px);
+        }
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+            display: block;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            margin-top: 30px;
+        }
+        .btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .highlight {
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #333;
+            font-weight: bold;
+        }
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 2rem; }
+            .demo-section { padding: 20px; }
+            .feature-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="hero">
+            <h1>🚀 VibeChat Widget</h1>
+            <p>Beautiful, modern AI chat widget that embeds into any website with just 2 lines of code</p>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎯 Ultra-Easy Integration</h2>
+            <p>Add our modern AI chat widget to any website with just these 2 lines:</p>
+            
+            <div class="code-block">
+                <pre>&lt;script src="http://localhost:3000/embed.js">&lt;/script>
+&lt;script>VibeChat.init({ apiUrl: 'http://localhost:8001' });&lt;/script></pre>
+            </div>
+
+            <p>That's it! Your beautiful AI chat widget is now live on your website. ✨</p>
+        </div>
+
+        <div class="demo-section">
+            <h2>⚙️ Customization Options</h2>
+            <p>Customize the widget to match your brand:</p>
+            
+            <div class="code-block">
+                <pre>VibeChat.init({
+    apiUrl: 'http://localhost:8001',
+    position: 'bottom-right',  // bottom-right, bottom-left, top-right, top-left
+    primaryColor: '#667eea',    // Your brand primary color
+    secondaryColor: '#764ba2',  // Your brand secondary color
+    borderRadius: '16px',       // Border radius for modern look
+    language: 'ru'              // Interface language
+});</pre>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎨 Modern Design Features</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <span class="feature-icon">✨</span>
+                    <h3>Glassmorphism Design</h3>
+                    <p>Beautiful frosted glass effect with backdrop blur for a modern, premium look</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🌊</span>
+                    <h3>Smooth Animations</h3>
+                    <p>Fluid transitions and micro-interactions that delight users</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">📱</span>
+                    <h3>Fully Responsive</h3>
+                    <p>Perfect on all devices - desktop, tablet, and mobile</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">⚡</span>
+                    <h3>Real-time Streaming</h3>
+                    <p>Live AI responses with typing indicators and streaming text</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🔒</span>
+                    <h3>Ultra-Secure</h3>
+                    <p>10-second JWT tokens and IP validation for maximum security</p>
+                </div>
+                <div class="feature-card">
+                    <span class="feature-icon">🎯</span>
+                    <h3>Smart Suggestions</h3>
+                    <p>Context-aware quick reply chips to guide conversations</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎮 Interactive Demo</h2>
+            <p>Try the widget in action! Click the chat button in the bottom-right corner.</p>
+            
+            <div class="controls">
+                <button class="btn" onclick="VibeChat.open()">Open Chat</button>
+                <button class="btn" onclick="VibeChat.close()">Close Chat</button>
+                <button class="btn" onclick="VibeChat.sendMessageProgrammatically('Привет! Тестовое сообщение')">Send Test Message</button>
+                <a href="modern-widget.html" class="btn highlight">View Full Demo</a>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔧 Technical Specs</h2>
+            <ul style="font-size: 1.1rem; line-height: 2;">
+                <li><strong>Security:</strong> Ultra-short 10-second JWT tokens</li>
+                <li><strong>Performance:</strong> Lightweight (~15KB gzipped)</li>
+                <li><strong>Integration:</strong> Zero dependencies, pure vanilla JS</li>
+                <li><strong>Compatibility:</strong> All modern browsers (IE11+)</li>
+                <li><strong>Framework:</strong> Works with React, Vue, Angular, or plain HTML</li>
+                <li><strong>Styling:</strong> CSS-in-JS, no external stylesheets needed</li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- EMBED THE WIDGET - This is what users would add to their sites -->
+    <script src="embed.js"></script>
+    <script>
+        VibeChat.init({ 
+            apiUrl: 'http://localhost:8001',
+            position: 'bottom-right',
+            primaryColor: '#667eea',
+            secondaryColor: '#764ba2'
+        });
+    </script>
+</body>
+</html>

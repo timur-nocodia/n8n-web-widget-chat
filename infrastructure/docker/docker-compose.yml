@@ -1,0 +1,70 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: chat_proxy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chat_proxy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  proxy-server:
+    build:
+      context: ../../apps/proxy-server
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/chat_proxy
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=dev-jwt-secret-change-in-production
+      - SESSION_SECRET_KEY=dev-session-secret-change-in-production
+      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL:-https://your-n8n-instance.com/webhook/chat}
+      - N8N_API_KEY=${N8N_API_KEY:-your-n8n-api-key}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8080
+      - DEBUG=true
+      - LOG_LEVEL=INFO
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../../apps/proxy-server:/app
+    command: ["python", "src/main.py"]
+
+  chat-widget:
+    build:
+      context: ../../apps/chat-widget
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../../apps/chat-widget:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+volumes:
+  postgres_data:
+  redis_data:
