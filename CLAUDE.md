@@ -48,13 +48,12 @@ All modes use:
 
 ### Project Setup
 ```bash
-# Docker-based setup (recommended)
+# Setup (creates environment files and virtual environment)
 ./scripts/setup.sh
 
-# Manual setup (if not using Docker)
-npm install  # Install root dependencies
-cd apps/chat-widget && npm install
-cd apps/proxy-server && pip install -r requirements.txt
+# Manual setup
+cd apps/proxy-server && pip install -r requirements-stateless.txt  # For stateless mode
+cd apps/proxy-server && pip install -r requirements-sqlite.txt     # For SQLite mode
 ```
 
 ### Development
@@ -64,10 +63,6 @@ cd apps/proxy-server && python main_stateless.py    # Stateless mode (no depende
 cd apps/proxy-server && python main_sqlite.py       # SQLite mode (minimal dependencies)
 
 # Widget is served automatically by the backend at /widget/modern-widget.html
-
-# Docker Compose (optional - if using containerized development)
-cd infrastructure/docker
-docker-compose up --build
 ```
 
 ### Production Server
@@ -78,9 +73,6 @@ cd apps/proxy-server && pip install -r requirements-sqlite.txt && python main_sq
 
 # Production server (if exists):
 cd apps/proxy-server && python main_production.py  # Check if this file exists
-
-# Or with Docker
-docker-compose up -d  # Root directory docker-compose.yml
 ```
 
 ### Building and Testing
@@ -110,7 +102,6 @@ cd apps/proxy-server && ruff check . && black --check .
 
 ### Environment Files
 - `apps/proxy-server/.env`: Backend configuration (create from .env.example)
-- Docker Compose passes environment variables for containerized development
 
 ### Key Environment Variables
 
@@ -224,7 +215,7 @@ All modes send JWT tokens with this payload structure to n8n:
 1. **Quick Testing**: Start with stateless mode (`python main_stateless.py`) - no setup required
 2. **Testing Widget**: Visit `http://localhost:8000/widget/modern-widget.html`
 3. **EventSource Compatibility**: All modes support both POST and GET endpoints for SSE streaming
-4. **Logs**: Check server console output or use `docker-compose logs -f [service]` if using Docker
+4. **Logs**: Check server console output
 5. **Rate Limits**: Can be tested with `./scripts/test-security.sh`
 
 ## Important Implementation Notes
