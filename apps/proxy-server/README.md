@@ -31,8 +31,7 @@ source venv/bin/activate
 # Install dependencies
 pip install -r requirements.txt
 
-# Run database migrations
-alembic upgrade head
+# No database migrations needed - schema auto-created for SQLite mode
 ```
 
 ### Configuration

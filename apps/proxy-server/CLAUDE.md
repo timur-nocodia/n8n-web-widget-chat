@@ -55,12 +55,9 @@ apps/proxy-server/
 │       ├── n8n_client.py       # n8n webhook communication
 │       ├── rate_limiter.py     # Redis-based rate limiting
 │       └── sse_manager.py      # SSE connection management
-├── alembic/                     # Database migrations
-│   └── env.py                   # Alembic configuration
 ├── main.py                      # Development entry point
 ├── main_production.py           # Production-optimized server
 ├── requirements.txt             # Python dependencies
-├── alembic.ini                  # Alembic configuration
 ├── Dockerfile                   # Container configuration
 ├── .env.example                 # Environment template
 └── README.md                    # Backend documentation
@@ -84,14 +81,8 @@ cp .env.example .env
 
 ### Database Setup
 ```bash
-# Run migrations
-alembic upgrade head
-
-# Create new migration
-alembic revision --autogenerate -m "description"
-
-# Rollback migration
-alembic downgrade -1
+# No database setup needed for stateless/SQLite modes
+# SQLite schema is auto-created on startup
 ```
 
 ### Running the Server
@@ -109,17 +100,6 @@ uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
 LOG_LEVEL=DEBUG python src/main.py
 ```
 
-### Testing
-```bash
-# Run tests
-python -m pytest
-
-# With coverage
-python -m pytest --cov=src --cov-report=html
-
-# Test specific module
-python -m pytest tests/test_security.py -v
-```
 
 ### Code Quality
 ```bash
@@ -254,7 +234,7 @@ GET /metrics
 2. **Error Handling**: All exceptions logged, graceful fallbacks
 3. **Testing SSE**: Use `curl -N http://localhost:8000/api/v1/chat/stream`
 4. **Debug Mode**: Set `DEBUG=True` for detailed logging
-5. **Rate Limit Testing**: Use security test script from root repo
+5. **Rate Limits**: Can be tested with `./scripts/test-security.sh`
 
 ## Production Considerations
 
@@ -280,7 +260,7 @@ GET /metrics
 ### Database Connection Errors
 - Verify PostgreSQL is running
 - Check DATABASE_URL format
-- Run migrations: `alembic upgrade head`
+- No database migrations needed (SQLite schema auto-created)
 
 ### CORS Errors
 - Add origin to ALLOWED_ORIGINS

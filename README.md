@@ -1,51 +1,85 @@
-# n8n Chat Widget Proxy
+# n8n Web Widget Chat System
 
-A production-ready chat proxy system that connects web chat widgets to n8n workflows for AI-powered customer support.
+A production-ready, lightweight chat widget system that connects to n8n workflows for AI-powered customer support. Features browser-first storage, real-time streaming, and multiple deployment options.
 
-## Features
+## 🚀 Quick Start (5 minutes)
 
-- 🔒 **Secure JWT-based authentication**
-- 🚀 **Real-time streaming responses** via Server-Sent Events (SSE)
-- 🛡️ **Built-in rate limiting and security**
-- 📦 **Single Docker container deployment**
-- 🎨 **Modern, responsive chat widget**
-- 🔌 **Easy n8n integration**
-
-## Quick Start
-
-### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/n8n_embed_chat.git
-cd n8n_embed_chat
+# 1. Clone the repository
+git clone https://github.com/timur-nocodia/n8n-web-widget-chat.git
+cd n8n-web-widget-chat
+
+# 2. Copy environment configuration
+cp .env.development.example .env
+
+# 3. Edit .env with your n8n webhook URL
+# Update N8N_WEBHOOK_URL with your actual webhook
+
+# 4. Start the backend (stateless mode - no database required!)
+cd apps/proxy-server
+pip install -r requirements-stateless.txt
+python main_stateless.py
+
+# 5. Open the widget demo
+# Visit: http://localhost:8000/widget/modern-widget.html
 ```
 
-### 2. Configure environment
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
+That's it! Your chat widget is running. 🎉
 
-### 3. Run with Docker Compose
-```bash
-docker-compose up -d
-```
+## 📦 What's Included
 
-The service will be available at `http://localhost:8000`
+### **Chat Widget** (Frontend)
+- 🎨 **Fully customizable** via JSON configuration
+- 💾 **Browser-first storage** using IndexedDB
+- 🔄 **Real-time streaming** with Server-Sent Events
+- 📱 **Responsive design** for mobile and desktop
+- 🔒 **Production-ready** with console management
+- 🌐 **Multi-language support** ready
+
+### **Proxy Server** (Backend)
+- 🏃 **Three deployment modes**: Stateless, SQLite, or PostgreSQL
+- 🔐 **JWT-based security** with session management
+- ⚡ **Rate limiting** and DDoS protection
+- 🔄 **n8n integration** with streaming support
+- 📊 **Built-in metrics** and health checks
+- 🚀 **Production optimized** with minimal dependencies
+
+## 🎯 Deployment Options
+
+### Option 1: **Stateless Mode** (Recommended) ⭐
+- **Zero database** - runs immediately
+- **Infinite scale** - completely stateless
+- **Browser storage** - chat history in IndexedDB
+
+### Option 2: **SQLite Mode** (Lightweight + Analytics)
+- **Single file database** - easy backup
+- **Basic analytics** - track usage
+- **Still browser-first** - for chat history
+
+### Option 3: **PostgreSQL Mode** (Enterprise)
+- **Full persistence** - server-side storage
+- **Advanced features** - complex analytics
+- **Higher maintenance** - database management
 
 ## Configuration
 
 ### Required Environment Variables
 
-- `JWT_SECRET_KEY`: Secret key for JWT tokens (generate a strong random key)
-- `SESSION_SECRET_KEY`: Secret key for n8n session validation
 - `N8N_WEBHOOK_URL`: Your n8n webhook URL for chat processing
+- `JWT_SECRET_KEY`: Secret key for JWT tokens (generate with: `openssl rand -hex 32`)
+- `SESSION_SECRET_KEY`: Secret key for n8n session validation
 - `ALLOWED_ORIGINS`: Comma-separated list of allowed domains
 
-### Optional Configuration
+### Quick Configuration
 
-- `DATABASE_URL`: PostgreSQL connection string (for session persistence)
-- `REDIS_URL`: Redis connection string (for rate limiting)
-- `LOG_LEVEL`: Logging level (WARNING recommended for production)
+```bash
+# Development
+cp .env.development.example .env
+
+# Production
+cp .env.production.example .env
+# Edit with your values
+```
 
 ## Widget Integration
 

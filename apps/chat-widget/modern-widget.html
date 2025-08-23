@@ -813,6 +813,217 @@
             }
         }
 
+        // Browser Chat Storage for persistent chat history
+        class BrowserChatStorage {
+            constructor() {
+                this.dbName = 'ChatWidgetDB';
+                this.dbVersion = 1;
+                this.db = null;
+                this.currentSessionId = null;
+                this.init();
+            }
+
+            async init() {
+                if (!('indexedDB' in window)) {
+                    console.warn('IndexedDB not supported, using localStorage');
+                    return;
+                }
+
+                try {
+                    this.db = await new Promise((resolve, reject) => {
+                        const request = indexedDB.open(this.dbName, this.dbVersion);
+                        
+                        request.onerror = () => reject(request.error);
+                        request.onsuccess = () => resolve(request.result);
+                        
+                        request.onupgradeneeded = (event) => {
+                            const db = event.target.result;
+                            
+                            // Create sessions store
+                            if (!db.objectStoreNames.contains('sessions')) {
+                                const sessionStore = db.createObjectStore('sessions', { keyPath: 'id' });
+                                sessionStore.createIndex('createdAt', 'createdAt', { unique: false });
+                            }
+
+                            // Create messages store
+                            if (!db.objectStoreNames.contains('messages')) {
+                                const messageStore = db.createObjectStore('messages', { keyPath: 'id' });
+                                messageStore.createIndex('sessionId', 'sessionId', { unique: false });
+                                messageStore.createIndex('timestamp', 'timestamp', { unique: false });
+                            }
+                        };
+                    });
+                } catch (error) {
+                    console.error('Failed to initialize IndexedDB:', error);
+                }
+            }
+
+            generateSessionId() {
+                return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+
+            generateMessageId() {
+                return 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            }
+
+            async createSession() {
+                const sessionId = this.generateSessionId();
+                const session = {
+                    id: sessionId,
+                    createdAt: new Date(),
+                    updatedAt: new Date(),
+                    metadata: {
+                        userAgent: navigator.userAgent,
+                        origin: window.location.origin,
+                        pageUrl: window.location.href
+                    },
+                    isActive: true
+                };
+
+                try {
+                    if (this.db) {
+                        const transaction = this.db.transaction(['sessions'], 'readwrite');
+                        const store = transaction.objectStore('sessions');
+                        await new Promise((resolve, reject) => {
+                            const request = store.put(session);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                        });
+                    } else {
+                        localStorage.setItem('current_session', JSON.stringify(session));
+                    }
+                    
+                    this.currentSessionId = sessionId;
+                    return sessionId;
+                } catch (error) {
+                    console.error('Failed to create session:', error);
+                    return null;
+                }
+            }
+
+            async getCurrentSession() {
+                if (this.currentSessionId) {
+                    return this.currentSessionId;
+                }
+
+                try {
+                    if (this.db) {
+                        const transaction = this.db.transaction(['sessions'], 'readonly');
+                        const store = transaction.objectStore('sessions');
+                        const index = store.index('createdAt');
+                        const request = index.openCursor(null, 'prev');
+                        
+                        const session = await new Promise((resolve) => {
+                            request.onsuccess = () => {
+                                const cursor = request.result;
+                                if (cursor && cursor.value.isActive) {
+                                    resolve(cursor.value);
+                                } else {
+                                    resolve(null);
+                                }
+                            };
+                            request.onerror = () => resolve(null);
+                        });
+
+                        if (session) {
+                            this.currentSessionId = session.id;
+                            return session.id;
+                        }
+                    } else {
+                        const session = JSON.parse(localStorage.getItem('current_session') || 'null');
+                        if (session && session.isActive) {
+                            this.currentSessionId = session.id;
+                            return session.id;
+                        }
+                    }
+                } catch (error) {
+                    console.error('Failed to get current session:', error);
+                }
+
+                return null;
+            }
+
+            async saveMessage(content, role, sessionId) {
+                if (!sessionId) {
+                    sessionId = this.currentSessionId;
+                }
+
+                if (!sessionId) {
+                    console.error('No session ID available for saving message');
+                    return null;
+                }
+
+                const message = {
+                    id: this.generateMessageId(),
+                    sessionId: sessionId,
+                    content: content,
+                    role: role,
+                    timestamp: new Date()
+                };
+
+                try {
+                    if (this.db) {
+                        const transaction = this.db.transaction(['messages'], 'readwrite');
+                        const store = transaction.objectStore('messages');
+                        await new Promise((resolve, reject) => {
+                            const request = store.put(message);
+                            request.onsuccess = () => resolve();
+                            request.onerror = () => reject(request.error);
+                        });
+                    } else {
+                        const messages = JSON.parse(localStorage.getItem('messages_' + sessionId) || '[]');
+                        messages.push(message);
+                        localStorage.setItem('messages_' + sessionId, JSON.stringify(messages));
+                    }
+
+                    return message;
+                } catch (error) {
+                    console.error('Failed to save message:', error);
+                    return null;
+                }
+            }
+
+            async getMessages(sessionId) {
+                if (!sessionId) {
+                    sessionId = this.currentSessionId;
+                }
+
+                if (!sessionId) {
+                    return [];
+                }
+
+                try {
+                    if (this.db) {
+                        const transaction = this.db.transaction(['messages'], 'readonly');
+                        const store = transaction.objectStore('messages');
+                        const index = store.index('sessionId');
+                        const request = index.getAll(sessionId);
+
+                        const messages = await new Promise((resolve, reject) => {
+                            request.onsuccess = () => resolve(request.result || []);
+                            request.onerror = () => reject(request.error);
+                        });
+
+                        return messages.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+                    } else {
+                        const messages = JSON.parse(localStorage.getItem('messages_' + sessionId) || '[]');
+                        return messages;
+                    }
+                } catch (error) {
+                    console.error('Failed to get messages:', error);
+                    return [];
+                }
+            }
+
+            async loadSessionHistory() {
+                const sessionId = await this.getCurrentSession();
+                if (sessionId) {
+                    return await this.getMessages(sessionId);
+                }
+                return [];
+            }
+        }
+
         // StreamingBuffer class for handling progressive text rendering
         class StreamingBuffer {
             constructor(onFlush, options = {}) {
@@ -880,6 +1091,7 @@
                 this.isOpen = false;
                 this.isStreaming = false;
                 this.streamingBuffer = null;  // Progressive streaming buffer
+                this.storage = new BrowserChatStorage();
                 
                 this.initializeElements();
                 this.attachEventListeners();
@@ -987,27 +1199,30 @@
 
             async initializeSession() {
                 try {
-                    const response = await fetch(`${this.API_BASE}/api/v1/session/create`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Origin': window.location.origin
-                        },
-                        credentials: 'include',
-                        body: JSON.stringify({
-                            origin_domain: window.location.hostname,
-                            page_url: window.location.href
-                        })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        this.sessionId = data.session_id;
-                        console.log('✅ Session created:', this.sessionId);
+                    // First, try to get or create a browser-side session
+                    let sessionId = await this.storage.getCurrentSession();
+                    if (!sessionId) {
+                        sessionId = await this.storage.createSession();
                     }
+                    
+                    this.sessionId = sessionId;
+
+                    // Load chat history if exists
+                    const messages = await this.storage.getMessages(sessionId);
+                    if (messages.length > 0) {
+                        // Clear the current welcome message and load history
+                        this.messages.innerHTML = '';
+                        for (const msg of messages) {
+                            this.addMessage(msg.content, msg.role);
+                        }
+                    }
+
+                    console.log('✅ Session initialized:', this.sessionId, `(${messages.length} messages loaded)`);
                 } catch (error) {
-                    console.error('❌ Session creation failed:', error);
-                    this.addMessage(this.config.get('texts.messages.errorMessage', 'Could not connect to server. Please try again later.'), 'bot');
+                    console.error('❌ Session initialization failed:', error);
+                    // Fallback to a simple session ID
+                    this.sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                    this.addMessage(this.config.get('texts.messages.errorMessage', 'Session restored from browser storage'), 'bot');
                 }
             }
 
@@ -1020,8 +1235,9 @@
                 this.input.style.height = 'auto';
                 this.suggestions.style.display = 'none';
 
-                // Add user message
+                // Add user message and save to storage
                 this.addMessage(message, 'user');
+                await this.storage.saveMessage(message, 'user', this.sessionId);
 
                 // Show typing indicator
                 let typingElement = this.addTypingIndicator();
@@ -1051,7 +1267,7 @@
                     // Text will be updated directly in the onmessage handler
                     
                     // Store reference to botMessageElement for completion handling
-                    const completionHandler = () => {
+                    const completionHandler = async () => {
                         // Final markdown rendering when streaming completes
                         if (botMessageElement && streamedText) {
                             const bubbleElement = botMessageElement.querySelector('.message-bubble');
@@ -1060,6 +1276,9 @@
                                 bubbleElement.innerHTML = finalHtml;
                                 bubbleElement.classList.remove('streaming');
                             }
+                            
+                            // Save assistant's response to storage
+                            await this.storage.saveMessage(streamedText, 'assistant', this.sessionId);
                         }
                         console.log('✨ Progressive streaming complete');
                     };
@@ -1102,6 +1321,75 @@
                         }
 
                         if (data.trim() !== '') {
+                            let contentText = '';
+                            
+                            // Split concatenated JSON objects and extract content
+                            let pos = 0;
+                            while (pos < data.length) {
+                                const startIdx = data.indexOf('{"type":"item"', pos);
+                                if (startIdx === -1) break;
+                                
+                                // Find the end of this JSON object
+                                let braceCount = 0;
+                                let endIdx = startIdx;
+                                let inString = false;
+                                let escaped = false;
+                                
+                                for (let i = startIdx; i < data.length; i++) {
+                                    const char = data[i];
+                                    
+                                    if (escaped) {
+                                        escaped = false;
+                                        continue;
+                                    }
+                                    
+                                    if (char === '\\') {
+                                        escaped = true;
+                                        continue;
+                                    }
+                                    
+                                    if (char === '"') {
+                                        inString = !inString;
+                                        continue;
+                                    }
+                                    
+                                    if (!inString) {
+                                        if (char === '{') braceCount++;
+                                        else if (char === '}') braceCount--;
+                                        
+                                        if (braceCount === 0) {
+                                            endIdx = i;
+                                            break;
+                                        }
+                                    }
+                                }
+                                
+                                if (braceCount === 0) {
+                                    const jsonStr = data.substring(startIdx, endIdx + 1);
+                                    try {
+                                        const parsed = JSON.parse(jsonStr);
+                                        if (parsed.type === 'item' && parsed.content) {
+                                            contentText += parsed.content;
+                                        }
+                                    } catch (e) {
+                                        // Skip invalid JSON
+                                    }
+                                    pos = endIdx + 1;
+                                } else {
+                                    break;
+                                }
+                            }
+                            
+                            // If no JSON content found, check for plain text
+                            if (!contentText && !data.includes('{"type":')) {
+                                contentText = data;
+                            }
+                            
+                            if (!contentText.trim()) {
+                                lastChunkTime = currentTime;
+                                return;
+                            }
+                            
                             // Remove typing indicator on first chunk
                             if (isFirstChunk) {
                                 if (typingElement) {
@@ -1113,7 +1401,7 @@
                             }
                             
                             // Unescape newlines that were escaped for SSE transport
-                            const unescapedData = data.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
+                            const unescapedData = contentText.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
                             
                             // Accumulate text for final rendering
                             streamedText += unescapedData;

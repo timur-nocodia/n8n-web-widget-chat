@@ -1,0 +1,13 @@
+# Minimal requirements for stateless chat proxy
+# No database dependencies, maximum performance
+
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+PyJWT==2.8.0
+httpx==0.25.2
+python-multipart==0.0.6
+
+# Optional: For enhanced security and performance
+cryptography==41.0.7  # For JWT encryption
+aiofiles==23.2.1      # For static file serving

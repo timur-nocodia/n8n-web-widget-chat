@@ -90,9 +90,8 @@
       }
     });
 
-    // For development, serve from Vite dev server
-    // For production, serve from the same origin
-    return `${baseUrl}/widget.html?${params.toString()}`;
+    // Serve the modern widget HTML file
+    return `${baseUrl}/widget/modern-widget.html?${params.toString()}`;
   }
 
   function setupMessageHandling(iframe, container) {

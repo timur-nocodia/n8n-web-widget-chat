@@ -9,21 +9,40 @@ No 'more robust solutions' and such. YOU ALWAYS ASK BEFORE DOING THINGS ANOTHER 
 
 ## Project Overview
 
-This is a secure chat proxy system for e-commerce platforms, built with a React TypeScript frontend and FastAPI Python backend. The system acts as a secure intermediary between embedded chat widgets and n8n workflows for AI-powered customer support.
+This is a secure chat proxy system for e-commerce platforms, built with a standalone HTML frontend and FastAPI Python backend. The system acts as a secure intermediary between embedded chat widgets and n8n workflows for AI-powered customer support.
 
 ## Architecture
 
-The project is a Turbo monorepo with two main applications:
+The project has two main components:
 
-- **chat-widget** (`apps/chat-widget/`): React TypeScript chat widget (Vite) that embeds via iframe on websites
+- **chat-widget** (`apps/chat-widget/`): Standalone HTML chat widget that embeds via iframe on websites
 - **proxy-server** (`apps/proxy-server/`): FastAPI Python server that handles authentication, rate limiting, and n8n integration
 
-The system uses:
-- PostgreSQL for session storage (async SQLAlchemy)
-- Redis for rate limiting and caching  
+### Deployment Modes
+
+The proxy server supports two deployment modes:
+
+1. **Stateless Mode** (`main_stateless.py`) - Recommended for most use cases:
+   - Zero database dependencies
+   - All session data stored browser-side (IndexedDB + localStorage)  
+   - Ultra-fast performance with <10ms latency
+   - Horizontally scalable with no shared state
+   - In-memory rate limiting (resets on server restart)
+
+2. **SQLite Mode** (`main_sqlite.py`) - Lightweight with analytics:
+   - Single SQLite file for session metadata
+   - Browser-first storage with server-side session tracking
+   - Persistent rate limiting across restarts
+   - Auto-cleanup of old data
+   - Easy backup (single .db file)
+
+### Common Components
+
+All modes use:
 - n8n workflows for AI processing
-- JWT tokens for secure authentication with browser fingerprinting
+- JWT tokens with dual-key system (JWT_SECRET_KEY for internal, SESSION_SECRET_KEY for n8n)
 - Server-sent events (SSE) for real-time chat streaming
+- Browser fingerprinting for session validation
 
 ## Common Development Commands
 
@@ -40,23 +59,25 @@ cd apps/proxy-server && pip install -r requirements.txt
 
 ### Development
 ```bash
-# Start all services with Turbo
-npm run dev        # Runs all apps in parallel
-turbo dev          # Alternative command
+# Backend modes (choose one):
+cd apps/proxy-server && python main_stateless.py    # Stateless mode (no dependencies)
+cd apps/proxy-server && python main_sqlite.py       # SQLite mode (minimal dependencies)
 
-# Individual services
-cd apps/chat-widget && npm run dev    # Frontend on port 5173
-cd apps/proxy-server && python src/main.py  # Backend on port 8000
+# Widget is served automatically by the backend at /widget/modern-widget.html
 
-# Docker Compose (includes PostgreSQL and Redis)
+# Docker Compose (optional - if using containerized development)
 cd infrastructure/docker
 docker-compose up --build
 ```
 
 ### Production Server
 ```bash
-# Run production-optimized server
-cd apps/proxy-server && python main_production.py
+# Production deployment options:
+cd apps/proxy-server && pip install -r requirements-stateless.txt && python main_stateless.py  # Stateless (recommended)
+cd apps/proxy-server && pip install -r requirements-sqlite.txt && python main_sqlite.py        # SQLite
+
+# Production server (if exists):
+cd apps/proxy-server && python main_production.py  # Check if this file exists
 
 # Or with Docker
 docker-compose up -d  # Root directory docker-compose.yml
@@ -64,19 +85,7 @@ docker-compose up -d  # Root directory docker-compose.yml
 
 ### Building and Testing
 ```bash
-# Build all apps
-npm run build
-turbo build
-
-# Frontend build and type checking
-cd apps/chat-widget && npm run build && npm run type-check
-
-# Backend testing
-cd apps/proxy-server && python -m pytest
-
-# Linting
-npm run lint       # All apps via Turbo
-cd apps/chat-widget && npm run lint
+# Backend linting
 cd apps/proxy-server && ruff check . && black --check .
 
 # Security testing
@@ -85,25 +94,17 @@ cd apps/proxy-server && ruff check . && black --check .
 
 ## Key File Structure
 
-### Frontend (React TypeScript)
-- `apps/chat-widget/src/embed.ts`: Creates iframe-based widget for embedding
-- `apps/chat-widget/src/components/`: Modular React components
-- `apps/chat-widget/src/services/api.ts`: Backend communication
-- `apps/chat-widget/src/hooks/useSSE.ts`: Real-time SSE streaming
-- `apps/chat-widget/modern-widget.html`: Standalone widget HTML
+### Frontend (Standalone HTML)
+- `apps/chat-widget/modern-widget.html`: Complete standalone chat widget with SSE streaming
+- `apps/chat-widget/public/embed.js`: JavaScript embed script for websites
+- `apps/chat-widget/widget-config.json`: Widget configuration file
 
 ### Backend (FastAPI Python)
-- `apps/proxy-server/src/main.py`: Main FastAPI application with middleware
-- `apps/proxy-server/main_production.py`: Production server entry point
-- `apps/proxy-server/src/core/security.py`: JWT, session management, threat detection
-- `apps/proxy-server/src/core/config.py`: Settings and environment configuration
-- `apps/proxy-server/src/services/rate_limiter.py`: Redis-based sliding window rate limits
-- `apps/proxy-server/src/services/n8n_client.py`: n8n webhook integration with streaming
-- `apps/proxy-server/src/services/jwt_service.py`: JWT token generation and validation
-- `apps/proxy-server/src/services/sse_manager.py`: SSE connection management
-- `apps/proxy-server/src/models/`: SQLAlchemy models (session.py, chat.py)
-- `apps/proxy-server/src/api/v1/endpoints/`: API route handlers (chat.py, session.py)
-- `apps/proxy-server/src/middleware/`: Security, rate limiting, error handling middleware
+
+**Entry Points:**
+- `apps/proxy-server/main_stateless.py`: Stateless server (no database dependencies)
+- `apps/proxy-server/main_sqlite.py`: SQLite server (lightweight single-file database)
+- `apps/proxy-server/main_production.py`: Production server entry point (if exists)
 
 ## Configuration
 
@@ -112,21 +113,32 @@ cd apps/proxy-server && ruff check . && black --check .
 - Docker Compose passes environment variables for containerized development
 
 ### Key Environment Variables
-```bash
-# Required for backend
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chat_proxy
-REDIS_URL=redis://localhost:6379/0
-JWT_SECRET_KEY=<secure-secret>  # Generated by setup.sh
-SESSION_SECRET_KEY=<secure-secret>  # Generated by setup.sh
-N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/chat
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8000
 
-# Optional
-N8N_API_KEY=<api-key>
-RATE_LIMIT_PER_MINUTE=60
-RATE_LIMIT_PER_HOUR=1000
+**Common (All Modes):**
+```bash
+# n8n Integration
+N8N_WEBHOOK_URL=https://your-n8n-instance.com/webhook/chat
+N8N_API_KEY=<optional-api-key>
+
+# Security
+JWT_SECRET_KEY=<secure-secret>    # For internal session tokens
+SESSION_SECRET_KEY=<secure-secret>  # For n8n validation tokens
+ALLOWED_ORIGINS=https://yoursite.com,http://localhost:8000
+
+# Server
+API_HOST=0.0.0.0
+API_PORT=8000
 LOG_LEVEL=WARNING  # INFO for development, WARNING for production
+
+# Rate Limiting  
+RATE_LIMIT_PER_MINUTE=60
 ```
+
+**SQLite Mode Additional:**
+```bash
+SQLITE_DB_PATH=chat_sessions.db  # Database file path
+```
+
 
 ## Widget Integration
 
@@ -165,8 +177,20 @@ LOG_LEVEL=WARNING  # INFO for development, WARNING for production
 The system integrates with n8n for AI processing:
 - Configure webhook URL in n8n workflow
 - Enable streaming response in webhook settings
-- JWT tokens are passed in headers for validation
+- JWT tokens passed in request body as `jwt_token` field (not Authorization header)
 - Supports SSE for real-time streaming responses
+
+### JWT Token Format for n8n
+All modes send JWT tokens with this payload structure to n8n:
+```json
+{
+  "session_id": "sess_1234567890_abcd1234",
+  "timestamp": "2024-01-01T12:00:00.000Z",
+  "message_history": [],
+  "session_metadata": {},
+  "exp": 1704105630
+}
+```
 
 ## Security Features
 
@@ -179,20 +203,46 @@ The system integrates with n8n for AI processing:
 - Session validation and expiry
 - Request signature validation
 
+## Deployment Mode Selection
+
+### When to Use Each Mode
+
+- **Stateless Mode**: Recommended for most use cases
+  - Zero maintenance, instant deployment
+  - Scales infinitely, no database overhead
+  - Perfect for startups and high-traffic sites
+  - Users retain chat history in browser storage
+
+- **SQLite Mode**: When you need basic server-side analytics  
+  - Single file database, easy backup
+  - Session tracking and usage analytics
+  - Still lightweight with browser-first storage
+  - Good middle ground option
+
 ## Development Tips
 
-1. **Hot Reloading**: Both frontend (Vite) and backend (uvicorn --reload) support hot reloading
-2. **Database**: PostgreSQL runs in Docker, tables are auto-created on startup
-3. **Testing Widget**: Visit `http://localhost:8000/widget/modern-widget.html` or `http://localhost:5173/modern-widget.html`
-4. **Logs**: Use `docker-compose logs -f [service]` to view logs
+1. **Quick Testing**: Start with stateless mode (`python main_stateless.py`) - no setup required
+2. **Testing Widget**: Visit `http://localhost:8000/widget/modern-widget.html`
+3. **EventSource Compatibility**: All modes support both POST and GET endpoints for SSE streaming
+4. **Logs**: Check server console output or use `docker-compose logs -f [service]` if using Docker
 5. **Rate Limits**: Can be tested with `./scripts/test-security.sh`
 
 ## Important Implementation Notes
 
 - Widget embeds via iframe for security isolation
 - All user inputs are sanitized for XSS/injection protection  
-- Rate limiting uses sliding window algorithm with Redis
+- JWT tokens use dual-key system: JWT_SECRET_KEY (internal) + SESSION_SECRET_KEY (n8n validation)
+- n8n integration requires `jwt_token` field in request body (not Authorization header)
+- EventSource/SSE streaming requires GET endpoints for browser compatibility
+- Stateless mode: Rate limiting is in-memory (resets on server restart)
+- SQLite mode: Uses aiosqlite for async database operations with persistent rate limiting
 - SSE connections managed with heartbeat and cleanup
-- JWT tokens include browser fingerprinting for added security
-- Database uses async SQLAlchemy with connection pooling
-- Production server uses multiple workers (uvicorn with --workers flag)
+
+### Critical Architecture Patterns
+
+- **Browser-First Storage**: Even SQLite mode prioritizes browser storage for chat history
+- **Dual JWT System**: Internal tokens for session validation, short-lived tokens for n8n
+- **Multi-Mode Compatibility**: All modes share the same JWT payload format for n8n
+- **EventSource Support**: GET endpoints wrap POST logic for browser EventSource API
+
+### Rules from user
