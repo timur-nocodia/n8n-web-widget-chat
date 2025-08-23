@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-python-jose[cryptography]
-python-multipart
-httpx
-sse-starlette
-python-dotenv

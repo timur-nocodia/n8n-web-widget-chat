@@ -58,7 +58,7 @@ async def send_message(
             session_id=session.id,
             role="user",
             content=validated_content,
-            metadata={
+            message_metadata={
                 "context": validated_context,
                 "security_check": {
                     "bot_score": bot_detection["confidence_score"],
@@ -94,11 +94,13 @@ async def send_message(
         if validated_context:
             context["user_context"] = validated_context
         
-        # Generate JWT for n8n
-        jwt_token = jwt_service.create_chat_token(
+        # Generate JWT for n8n (using SESSION_SECRET_KEY)
+        jwt_token = jwt_service.create_n8n_token(
             session_id=session.session_id,
             origin_domain=session.origin_domain,
-            user_context=context
+            page_url=session.page_url,
+            client_ip=client_ip,
+            user_agent=user_agent
         )
         
         # Create optimized SSE response with connection management

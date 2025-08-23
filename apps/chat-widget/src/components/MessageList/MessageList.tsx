@@ -1,5 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ChatMessage } from '@/types';
+import { MessageFooter } from '../MessageFooter/MessageFooter';
+import { useConfig } from '@/hooks/useConfig';
 import './MessageList.css';
 
 interface MessageListProps {
@@ -9,6 +11,7 @@ interface MessageListProps {
 
 export const MessageList: React.FC<MessageListProps> = ({ messages, isLoading }) => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { get } = useConfig();
   
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -18,12 +21,15 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, isLoading })
     scrollToBottom();
   }, [messages, isLoading]);
   
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
+  // Get footer configuration
+  const footerConfig = get('texts.messages.footer', {
+    enabled: true,
+    botName: 'Assistant',
+    userName: 'You',
+    showTimestamp: true,
+    timestampFormat: '24h',
+    showDate: true
+  });
   
   return (
     <div className="message-list">
@@ -34,7 +40,16 @@ export const MessageList: React.FC<MessageListProps> = ({ messages, isLoading })
         >
           <div className="message-content">
             <div className="message-text">{message.content}</div>
-            <div className="message-time">{formatTime(message.created_at)}</div>
+            {footerConfig.enabled !== false && (
+              <MessageFooter
+                name={message.role === 'user' ? footerConfig.userName : footerConfig.botName}
+                timestamp={new Date(message.created_at)}
+                showTimestamp={footerConfig.showTimestamp}
+                showDate={footerConfig.showDate}
+                timestampFormat={footerConfig.timestampFormat}
+                type={message.role === 'user' ? 'user' : 'bot'}
+              />
+            )}
           </div>
         </div>
       ))}

@@ -83,3 +83,5 @@ Thumbs.db
 # Other
 /.playwright-mcp
 /.claude
+/n8n-master
+/n8n-original-chat

@@ -1,0 +1,106 @@
+{
+  "_comment": "This is an example configuration file for the chat widget. Copy this to widget-config.json and customize as needed.",
+  
+  "api": {
+    "_comment": "API configuration for backend communication",
+    "baseUrl": "https://your-api-server.com",
+    "endpoints": {
+      "session": "/api/v1/session/create",
+      "chat": "/api/v1/chat/stream"
+    }
+  },
+  
+  "appearance": {
+    "_comment": "Visual customization options",
+    "position": "bottom-right",
+    "theme": {
+      "_comment": "Color scheme and visual theme",
+      "primaryColor": "#667eea",
+      "secondaryColor": "#764ba2",
+      "primaryGradient": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      "bgDark": "rgba(30, 30, 46, 0.95)",
+      "bgGlass": "rgba(255, 255, 255, 0.1)",
+      "textLight": "#ffffff",
+      "textDark": "#2d3748",
+      "borderRadius": "16px",
+      "fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    },
+    "dimensions": {
+      "_comment": "Size and positioning",
+      "width": "380px",
+      "height": "600px",
+      "mobileWidth": "calc(100vw - 40px)",
+      "mobileHeight": "calc(100vh - 40px)",
+      "buttonSize": "60px",
+      "bottomOffset": "20px",
+      "rightOffset": "20px"
+    }
+  },
+  
+  "texts": {
+    "_comment": "All customizable text content",
+    "header": {
+      "title": "AI Support",
+      "subtitle": "Online • Here to help"
+    },
+    "messages": {
+      "welcomeMessage": "👋 Welcome! How can I assist you today?",
+      "errorMessage": "Sorry, I couldn't connect to the server. Please try again later.",
+      "connectionError": "Connection error: ",
+      "footer": {
+        "_comment": "Message footer with sender name and timestamp",
+        "enabled": true,
+        "botName": "Assistant",
+        "userName": "You",
+        "showTimestamp": true,
+        "timestampFormat": "24h",
+        "showDate": true,
+        "dateFormat": "short"
+      }
+    },
+    "input": {
+      "placeholder": "Type your message here...",
+      "hint": "Press Enter to send"
+    },
+    "suggestions": [
+      {
+        "text": "Get Help",
+        "value": "I need help with your product"
+      },
+      {
+        "text": "Pricing",
+        "value": "What are your pricing plans?"
+      },
+      {
+        "text": "Features",
+        "value": "What features do you offer?"
+      },
+      {
+        "text": "Contact",
+        "value": "How can I contact support?"
+      }
+    ],
+    "button": {
+      "openIcon": "💬",
+      "closeIcon": "✕",
+      "sendIcon": "➤"
+    }
+  },
+  
+  "behavior": {
+    "_comment": "Widget behavior settings",
+    "autoOpen": false,
+    "autoOpenDelay": 3000,
+    "enableSuggestions": true,
+    "enableTypingIndicator": true,
+    "enableMarkdown": true,
+    "enableSoundNotifications": false,
+    "maxMessageLength": 10000
+  },
+  
+  "localization": {
+    "_comment": "Language and regional settings",
+    "locale": "en",
+    "rtl": false
+  }
+}

@@ -13,7 +13,11 @@
     "test": "turbo test",
     "lint": "turbo lint",
     "clean": "turbo clean",
-    "setup": "./scripts/setup.sh"
+    "setup": "./scripts/setup.sh",
+    "remove-logs": "./scripts/remove-logs.sh",
+    "remove-logs:dry": "./scripts/remove-logs.sh --dry-run",
+    "clean:logs": "./scripts/remove-logs.sh",
+    "clean:all": "turbo clean && ./scripts/remove-logs.sh"
   },
   "devDependencies": {
     "turbo": "^1.10.0",

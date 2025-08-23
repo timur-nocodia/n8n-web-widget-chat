@@ -17,7 +17,7 @@ class ChatMessage(Base):
     content = Column(Text, nullable=False)
     
     # Metadata
-    metadata = Column(JSON, nullable=True)  # Extra data like tokens, model used, etc.
+    message_metadata = Column(JSON, nullable=True)  # Extra data like tokens, model used, etc.
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

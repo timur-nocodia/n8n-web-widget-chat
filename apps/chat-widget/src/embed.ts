@@ -1,7 +1,9 @@
 import { ChatConfig } from './types';
+import { disableConsole } from './utils/console';
 
 interface EmbedConfig extends ChatConfig {
   containerId?: string;
+  disableConsoleInProduction?: boolean;
 }
 
 class ChatWidgetEmbed {
@@ -22,6 +24,15 @@ class ChatWidgetEmbed {
   }
 
   public init(): void {
+    // Disable console in production if configured
+    const isProduction = !window.location.hostname.includes('localhost') &&
+                        !window.location.hostname.startsWith('192.168.') &&
+                        !window.location.hostname.startsWith('127.0.0.1');
+    
+    if (isProduction && this.config.disableConsoleInProduction !== false) {
+      disableConsole();
+    }
+    
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', () => this.render());
     } else {

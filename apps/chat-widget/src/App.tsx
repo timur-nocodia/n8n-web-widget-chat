@@ -1,16 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ChatWindow } from '@/components/ChatWindow/ChatWindow';
 import { ChatConfig } from '@/types';
+import { useConfig } from '@/hooks/useConfig';
 
 interface AppProps {
-  config: ChatConfig;
+  config?: ChatConfig;
 }
 
-export const App: React.FC<AppProps> = ({ config }) => {
+export const App: React.FC<AppProps> = ({ config: externalConfig }) => {
+  const { config: loadedConfig, loading, getText, isEnabled, get } = useConfig();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Use external config if provided, otherwise use loaded config
+  const config = externalConfig || loadedConfig;
 
   const handleOpen = () => setIsOpen(true);
   const handleClose = () => setIsOpen(false);
+
+  // Handle auto-open behavior
+  useEffect(() => {
+    if (config && isEnabled('autoOpen')) {
+      const delay = get('behavior.autoOpenDelay', 0);
+      const timer = setTimeout(() => setIsOpen(true), delay);
+      return () => clearTimeout(timer);
+    }
+  }, [config, isEnabled, get]);
+
+  if (loading || !config) {
+    return null; // Don't render until config is loaded
+  }
 
   return (
     <>
@@ -49,18 +67,9 @@ export const App: React.FC<AppProps> = ({ config }) => {
             e.currentTarget.style.boxShadow = '0 4px 16px rgba(0, 0, 0, 0.12)';
           }}
         >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
+          <span style={{ fontSize: '24px' }}>
+            {getText('button.openIcon', '💬')}
+          </span>
         </button>
       )}
 

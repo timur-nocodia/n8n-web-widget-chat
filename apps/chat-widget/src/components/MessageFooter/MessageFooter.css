@@ -1,0 +1,55 @@
+.message-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  opacity: 0.6;
+  color: var(--text-muted, #6c757d);
+  transition: opacity 0.2s;
+}
+
+.message-footer.user-footer {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.message-footer.bot-footer {
+  justify-content: flex-start;
+}
+
+.message-name {
+  font-weight: 500;
+  color: var(--text-secondary, #868e96);
+}
+
+.message-time {
+  opacity: 0.8;
+  color: var(--text-muted, #adb5bd);
+}
+
+/* Hover effect */
+.message:hover .message-footer {
+  opacity: 0.8;
+}
+
+/* Dark theme adjustments */
+.dark-theme .message-footer {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.dark-theme .message-name {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark-theme .message-time {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .message-footer {
+    font-size: 10px;
+    padding: 0 6px;
+  }
+}

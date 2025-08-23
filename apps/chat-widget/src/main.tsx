@@ -1,3 +1,4 @@
+import './init'; // Initialize app and disable console in production
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from './App';

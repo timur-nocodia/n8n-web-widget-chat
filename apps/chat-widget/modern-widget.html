@@ -185,8 +185,15 @@
         }
 
         .message {
-            margin-bottom: 16px;
+            margin-bottom: 20px;
             animation: slideIn 0.3s ease-out;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .user-message {
+            align-items: flex-end;
         }
 
         @keyframes slideIn {
@@ -306,6 +313,29 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-bottom-left-radius: 4px;
         }
+        
+        /* Message Footer */
+        .message-footer {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+            padding: 0 8px;
+            font-size: 11px;
+            opacity: 0.6;
+            color: var(--text-light);
+        }
+        
+        .user-message .message-footer {
+            flex-direction: row-reverse;
+        }
+        
+        .message-name {
+            font-weight: 500;
+        }
+        
+        .message-time {
+            opacity: 0.8;
+        }
 
         /* Typing Indicator */
         .typing-indicator {
@@ -372,6 +402,14 @@
             min-height: 40px;
             max-height: 120px;
             font-family: inherit;
+            overflow-y: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none; /* IE and Edge */
+        }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .message-input::-webkit-scrollbar {
+            display: none;
         }
 
         .message-input::placeholder {
@@ -545,12 +583,299 @@
     </div>
 
     <!-- Include Streaming Buffer -->
-    <script src="streaming-buffer.js"></script>
+    <!-- StreamingBuffer embedded inline below -->
     
     <script>
-        class ModernChatWidget {
+        // Disable console in production
+        (function() {
+            // Detect if we're in production (not localhost or local IP)
+            const isProduction = !window.location.hostname.includes('localhost') &&
+                                !window.location.hostname.startsWith('192.168.') &&
+                                !window.location.hostname.startsWith('127.0.0.1') &&
+                                !window.location.hostname.startsWith('10.') &&
+                                !window.location.hostname.startsWith('[::1]');
+            
+            if (isProduction) {
+                // Store original console for emergency restoration
+                window.__originalConsole = { ...console };
+                
+                // Create no-op function
+                const noop = function() {};
+                
+                // List of all console methods to override
+                const methods = [
+                    'log', 'debug', 'info', 'warn', 'error',
+                    'assert', 'clear', 'count', 'countReset',
+                    'dir', 'dirxml', 'group', 'groupCollapsed', 'groupEnd',
+                    'profile', 'profileEnd', 'table', 'time', 'timeEnd',
+                    'timeLog', 'timeStamp', 'trace'
+                ];
+                
+                // Override all console methods
+                methods.forEach(method => {
+                    console[method] = noop;
+                });
+                
+                // Prevent console object modification
+                if (Object.freeze) {
+                    Object.freeze(console);
+                }
+                
+                // Optional: Prevent developer tools detection
+                // Uncomment if you want aggressive protection
+                /*
+                document.addEventListener('keydown', function(e) {
+                    // Disable F12, Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U
+                    if (e.key === 'F12' ||
+                        (e.ctrlKey && e.shiftKey && ['I', 'J', 'C'].includes(e.key)) ||
+                        (e.ctrlKey && e.key === 'U')) {
+                        e.preventDefault();
+                        return false;
+                    }
+                });
+                
+                // Disable right-click
+                document.addEventListener('contextmenu', e => e.preventDefault());
+                */
+            }
+        })();
+
+        // Widget Configuration Loader
+        class WidgetConfig {
             constructor() {
-                this.API_BASE = 'http://localhost:8001';
+                this.config = null;
+                this.configUrl = this.getConfigUrl();
+            }
+
+            getConfigUrl() {
+                // Allow configuration URL to be set via data attribute or script parameter
+                const scripts = document.getElementsByTagName('script');
+                const currentScript = scripts[scripts.length - 1];
+                const configUrl = currentScript.getAttribute('data-config') || 
+                                 window.CHAT_WIDGET_CONFIG_URL || 
+                                 './widget-config.json';
+                return configUrl;
+            }
+
+            async load() {
+                try {
+                    const response = await fetch(this.configUrl);
+                    if (response.ok) {
+                        this.config = await response.json();
+                        this.applyConfiguration();
+                        console.log('✅ Widget configuration loaded');
+                    } else {
+                        console.warn('⚠️ Could not load configuration, using defaults');
+                        this.useDefaults();
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Configuration load failed, using defaults:', error);
+                    this.useDefaults();
+                }
+                return this.config;
+            }
+
+            useDefaults() {
+                // Fallback to default configuration if external config fails
+                this.config = {
+                    api: {
+                        baseUrl: window.location.origin.includes('localhost') ? 'http://localhost:8000' : window.location.origin
+                    },
+                    texts: {
+                        header: {
+                            title: 'AI Assistant',
+                            subtitle: 'Online • Powered by n8n'
+                        },
+                        messages: {
+                            welcomeMessage: '👋 Hello! I\'m your AI assistant. How can I help you today?',
+                            errorMessage: 'Sorry, I couldn\'t connect to the server. Please try again later.',
+                            connectionError: 'Connection error: '
+                        },
+                        input: {
+                            placeholder: 'Type your message...'
+                        },
+                        button: {
+                            openIcon: '💬',
+                            closeIcon: '✕',
+                            sendIcon: '➤'
+                        },
+                        suggestions: [
+                            { text: 'How can you help?', value: 'What can you help me with?' },
+                            { text: 'Tell me more', value: 'Can you tell me more about your features?' },
+                            { text: 'Get started', value: 'How do I get started?' }
+                        ]
+                    },
+                    behavior: {
+                        enableSuggestions: true,
+                        enableTypingIndicator: true,
+                        enableMarkdown: true,
+                        autoOpen: false,
+                        autoOpenDelay: 0
+                    }
+                };
+            }
+
+            applyConfiguration() {
+                if (!this.config) return;
+
+                // Apply CSS variables for theming
+                if (this.config.appearance?.theme) {
+                    const root = document.documentElement;
+                    const theme = this.config.appearance.theme;
+                    
+                    if (theme.primaryColor) root.style.setProperty('--primary-color', theme.primaryColor);
+                    if (theme.secondaryColor) root.style.setProperty('--secondary-color', theme.secondaryColor);
+                    if (theme.primaryGradient) root.style.setProperty('--primary-gradient', theme.primaryGradient);
+                    if (theme.bgDark) root.style.setProperty('--bg-dark', theme.bgDark);
+                    if (theme.bgGlass) root.style.setProperty('--bg-glass', theme.bgGlass);
+                    if (theme.textLight) root.style.setProperty('--text-light', theme.textLight);
+                    if (theme.textDark) root.style.setProperty('--text-dark', theme.textDark);
+                    if (theme.borderRadius) root.style.setProperty('--border-radius', theme.borderRadius);
+                }
+
+                // Apply dimensions
+                if (this.config.appearance?.dimensions) {
+                    const dims = this.config.appearance.dimensions;
+                    const container = document.querySelector('.chat-widget-container');
+                    const window = document.querySelector('.chat-window');
+                    const button = document.querySelector('.chat-toggle');
+                    
+                    if (container) {
+                        if (dims.bottomOffset) container.style.bottom = dims.bottomOffset;
+                        if (dims.rightOffset) container.style.right = dims.rightOffset;
+                    }
+                    if (window) {
+                        if (dims.width) window.style.width = dims.width;
+                        if (dims.height) window.style.height = dims.height;
+                    }
+                    if (button && dims.buttonSize) {
+                        button.style.width = dims.buttonSize;
+                        button.style.height = dims.buttonSize;
+                    }
+                }
+
+                // Apply texts
+                if (this.config.texts) {
+                    // Header
+                    if (this.config.texts.header) {
+                        const title = document.querySelector('.chat-header h3');
+                        const status = document.querySelector('.chat-status');
+                        if (title) title.textContent = this.config.texts.header.title;
+                        if (status) status.innerHTML = `<span class="status-indicator"></span>${this.config.texts.header.subtitle}`;
+                    }
+
+                    // Button icons
+                    if (this.config.texts.button) {
+                        const openIcon = document.querySelector('.chat-icon');
+                        const closeIcon = document.querySelector('.close-icon');
+                        const sendIcon = document.querySelector('.send-button');
+                        if (openIcon) openIcon.textContent = this.config.texts.button.openIcon;
+                        if (closeIcon) closeIcon.textContent = this.config.texts.button.closeIcon;
+                        if (sendIcon) sendIcon.textContent = this.config.texts.button.sendIcon;
+                    }
+
+                    // Input
+                    if (this.config.texts.input) {
+                        const input = document.getElementById('messageInput');
+                        if (input) input.placeholder = this.config.texts.input.placeholder;
+                    }
+
+                    // Welcome message
+                    if (this.config.texts.messages?.welcomeMessage) {
+                        const firstMessage = document.querySelector('.chat-messages .bot-message .message-bubble');
+                        if (firstMessage) firstMessage.textContent = this.config.texts.messages.welcomeMessage;
+                    }
+
+                    // Suggestions
+                    if (this.config.texts.suggestions) {
+                        const suggestionsContainer = document.getElementById('suggestions');
+                        if (suggestionsContainer) {
+                            suggestionsContainer.innerHTML = this.config.texts.suggestions
+                                .map(s => `<div class="suggestion-chip" data-text="${s.value}">${s.text}</div>`)
+                                .join('');
+                        }
+                    }
+                }
+            }
+
+            get(path, defaultValue = null) {
+                // Helper to get nested config values
+                const keys = path.split('.');
+                let value = this.config;
+                for (const key of keys) {
+                    if (value && typeof value === 'object' && key in value) {
+                        value = value[key];
+                    } else {
+                        return defaultValue;
+                    }
+                }
+                return value;
+            }
+        }
+
+        // StreamingBuffer class for handling progressive text rendering
+        class StreamingBuffer {
+            constructor(onFlush, options = {}) {
+                this.onFlush = onFlush;
+                this.flushDelay = options.flushDelay || 20;
+                this.maxBufferSize = options.maxBufferSize || 10;
+                this.buffer = '';
+                this.flushTimer = null;
+                this.lastFlushTime = Date.now();
+            }
+
+            add(text) {
+                this.buffer += text;
+                
+                // Flush if buffer is getting large or contains complete words
+                if (this.buffer.length >= this.maxBufferSize || 
+                    this.buffer.includes(' ') || 
+                    this.buffer.includes('\n')) {
+                    this.scheduleFlush();
+                }
+            }
+
+            scheduleFlush() {
+                if (this.flushTimer) return;
+                
+                const timeSinceLastFlush = Date.now() - this.lastFlushTime;
+                const delay = Math.max(0, this.flushDelay - timeSinceLastFlush);
+                
+                this.flushTimer = setTimeout(() => this.flush(), delay);
+            }
+
+            flush() {
+                if (this.buffer) {
+                    this.onFlush(this.buffer);
+                    this.buffer = '';
+                    this.lastFlushTime = Date.now();
+                }
+                this.flushTimer = null;
+            }
+
+            forceFlush() {
+                if (this.flushTimer) {
+                    clearTimeout(this.flushTimer);
+                    this.flushTimer = null;
+                }
+                this.flush();
+            }
+
+            clear() {
+                this.buffer = '';
+                if (this.flushTimer) {
+                    clearTimeout(this.flushTimer);
+                    this.flushTimer = null;
+                }
+            }
+        }
+
+        class ModernChatWidget {
+            constructor(config) {
+                this.config = config;
+                this.API_BASE = this.config.get('api.baseUrl', 
+                    window.location.origin.includes('localhost') ? 'http://localhost:8000' : window.location.origin
+                );
                 this.sessionId = null;
                 this.isOpen = false;
                 this.isStreaming = false;
@@ -559,6 +884,12 @@
                 this.initializeElements();
                 this.attachEventListeners();
                 this.initializeSession();
+                
+                // Handle auto-open behavior
+                if (this.config.get('behavior.autoOpen', false)) {
+                    const delay = this.config.get('behavior.autoOpenDelay', 0);
+                    setTimeout(() => this.toggleChat(), delay);
+                }
             }
 
             // Simple markdown parser for streaming text
@@ -676,7 +1007,7 @@
                     }
                 } catch (error) {
                     console.error('❌ Session creation failed:', error);
-                    this.addMessage('Не удалось подключиться к серверу. Попробуйте позже.', 'bot');
+                    this.addMessage(this.config.get('texts.messages.errorMessage', 'Could not connect to server. Please try again later.'), 'bot');
                 }
             }
 
@@ -716,35 +1047,11 @@
                     let lastChunkTime = null;
                     let accumulatedText = '';  // Buffer for all incoming text
                     
-                    // Initialize streaming buffer for progressive reveal
-                    this.streamingBuffer = new StreamingBuffer({
-                        charsPerInterval: 2,  // Reveal 2 characters at a time
-                        intervalMs: 20,       // Every 20ms (smoother than 30ms)
-                        wordBoundary: false   // Character-by-character for smoothest effect
-                    });
+                    // No streaming buffer needed - we display text immediately like n8n original
+                    // Text will be updated directly in the onmessage handler
                     
-                    // Setup buffer callbacks
-                    this.streamingBuffer.onChunk = (chunk) => {
-                        if (botMessageElement) {
-                            const bubbleElement = botMessageElement.querySelector('.message-bubble');
-                            if (bubbleElement) {
-                                // Handle special characters and newlines
-                                if (chunk.includes('\n')) {
-                                    const escapedContent = chunk
-                                        .replace(/&/g, '&amp;')
-                                        .replace(/</g, '&lt;')
-                                        .replace(/>/g, '&gt;')
-                                        .replace(/\n/g, '<br>');
-                                    bubbleElement.insertAdjacentHTML('beforeend', escapedContent);
-                                } else {
-                                    bubbleElement.insertAdjacentText('beforeend', chunk);
-                                }
-                                this.scrollToBottom();
-                            }
-                        }
-                    };
-                    
-                    this.streamingBuffer.onComplete = () => {
+                    // Store reference to botMessageElement for completion handling
+                    const completionHandler = () => {
                         // Final markdown rendering when streaming completes
                         if (botMessageElement && streamedText) {
                             const bubbleElement = botMessageElement.querySelector('.message-bubble');
@@ -785,12 +1092,10 @@
                             eventSource.close();
                             this.isStreaming = false;
                             
-                            // Let the buffer finish streaming any remaining text
-                            if (this.streamingBuffer.getRemaining()) {
-                                console.log('⏳ Waiting for buffer to finish streaming...');
-                            } else {
-                                this.streamingBuffer.forceComplete();
-                            }
+                            // No buffer to flush - text is displayed immediately
+                            
+                            // Call completion handler to finalize the message
+                            completionHandler();
                             
                             console.log(`✅ SSE complete. Total chunks: ${chunkCount}`);
                             return;
@@ -813,8 +1118,20 @@
                             // Accumulate text for final rendering
                             streamedText += unescapedData;
                             
-                            // Add to streaming buffer for progressive reveal
-                            this.streamingBuffer.addText(unescapedData);
+                            // IMMEDIATE INCREMENTAL DISPLAY - Append each chunk as it arrives
+                            if (botMessageElement) {
+                                const bubbleElement = botMessageElement.querySelector('.message-bubble');
+                                if (bubbleElement) {
+                                    // Create text node for the new chunk to preserve proper rendering
+                                    const textNode = document.createTextNode(unescapedData);
+                                    bubbleElement.appendChild(textNode);
+                                    
+                                    // Force immediate browser repaint
+                                    void bubbleElement.offsetHeight;
+                                    
+                                    this.scrollToBottom();
+                                }
+                            }
                         }
                     };
                     
@@ -830,7 +1147,7 @@
                         
                         if (typingElement) {
                             typingElement.remove();
-                            this.addMessage('Ошибка подключения к серверу', 'bot');
+                            this.addMessage(this.config.get('texts.messages.errorMessage', 'Connection error'), 'bot');
                         }
                     };
                     
@@ -840,7 +1157,7 @@
                 } catch (error) {
                     if (typingElement) {
                         typingElement.remove();
-                        this.addMessage(`Ошибка подключения: ${error.message}`, 'bot');
+                        this.addMessage(`${this.config.get('texts.messages.connectionError', 'Connection error: ')}${error.message}`, 'bot');
                     }
                     
                     // Cleanup streaming buffer on error
@@ -854,6 +1171,28 @@
                 }
             }
 
+            formatTimestamp() {
+                const now = new Date();
+                const footerConfig = this.config.get('texts.messages.footer', {});
+                
+                // Format time (24h format)
+                const hours = now.getHours().toString().padStart(2, '0');
+                const minutes = now.getMinutes().toString().padStart(2, '0');
+                const timeStr = `${hours}:${minutes}`;
+                
+                // Format date
+                let dateStr = '';
+                if (footerConfig.showDate) {
+                    const options = { 
+                        month: 'short', 
+                        day: 'numeric'
+                    };
+                    dateStr = now.toLocaleDateString('en-US', options);
+                }
+                
+                return footerConfig.showDate ? `${dateStr} ${timeStr}` : timeStr;
+            }
+
             addMessage(text, type, isStreaming = false) {
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${type}-message`;
@@ -861,14 +1200,41 @@
                 const bubbleDiv = document.createElement('div');
                 bubbleDiv.className = `message-bubble ${isStreaming ? 'streaming' : ''}`;
                 
-                // Handle both plain text and HTML content
-                if (text.includes('<') && text.includes('>')) {
-                    bubbleDiv.innerHTML = text;
-                } else {
-                    bubbleDiv.textContent = text;
+                // For streaming messages, start with empty bubble
+                if (!isStreaming) {
+                    // Handle both plain text and HTML content
+                    if (text.includes('<') && text.includes('>')) {
+                        bubbleDiv.innerHTML = text;
+                    } else {
+                        bubbleDiv.textContent = text;
+                    }
                 }
+                // For streaming, leave bubble empty - text will be appended incrementally
                 
                 messageDiv.appendChild(bubbleDiv);
+                
+                // Add footer with name and timestamp if enabled
+                const footerConfig = this.config.get('texts.messages.footer', {});
+                if (footerConfig.enabled !== false) {
+                    const footerDiv = document.createElement('div');
+                    footerDiv.className = 'message-footer';
+                    
+                    const name = type === 'bot' 
+                        ? footerConfig.botName || 'Assistant' 
+                        : footerConfig.userName || 'You';
+                    
+                    const timestamp = footerConfig.showTimestamp !== false 
+                        ? this.formatTimestamp() 
+                        : '';
+                    
+                    footerDiv.innerHTML = `
+                        <span class="message-name">${name}</span>
+                        ${timestamp ? `<span class="message-time">${timestamp}</span>` : ''}
+                    `;
+                    
+                    messageDiv.appendChild(footerDiv);
+                }
+                
                 this.messages.appendChild(messageDiv);
                 
                 this.scrollToBottom();
@@ -906,8 +1272,13 @@
         }
 
         // Initialize chat widget when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            window.modernChatWidget = new ModernChatWidget();
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Load configuration first
+            const configLoader = new WidgetConfig();
+            const config = await configLoader.load();
+            
+            // Initialize widget with configuration
+            window.modernChatWidget = new ModernChatWidget(configLoader);
         });
     </script>
 </body>

@@ -1,0 +1,142 @@
+{
+  "api": {
+    "baseUrl": "http://localhost:8000",
+    "endpoints": {
+      "session": "/api/v1/session/create",
+      "chat": "/api/v1/chat/stream"
+    }
+  },
+  "appearance": {
+    "position": "bottom-right",
+    "theme": {
+      "primaryColor": "#667eea",
+      "secondaryColor": "#764ba2",
+      "primaryGradient": "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      "bgDark": "rgba(30, 30, 46, 0.95)",
+      "bgGlass": "rgba(255, 255, 255, 0.1)",
+      "textLight": "#ffffff",
+      "textDark": "#2d3748",
+      "borderRadius": "16px",
+      "fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    },
+    "dimensions": {
+      "width": "380px",
+      "height": "600px",
+      "mobileWidth": "calc(100vw - 40px)",
+      "mobileHeight": "calc(100vh - 40px)",
+      "buttonSize": "60px",
+      "bottomOffset": "20px",
+      "rightOffset": "20px"
+    },
+    "animations": {
+      "enabled": true,
+      "springAnimation": "cubic-bezier(0.175, 0.885, 0.32, 1.275)",
+      "transitionDuration": "0.4s",
+      "typingIndicatorDelay": 1400,
+      "streamingFlushDelay": 20
+    },
+    "shadows": {
+      "floatShadow": "0 20px 40px rgba(0, 0, 0, 0.15)",
+      "elevatedShadow": "0 10px 25px rgba(0, 0, 0, 0.1)"
+    }
+  },
+  "texts": {
+    "header": {
+      "title": "ИИ Ассистент",
+      "subtitle": "Online • Powered by n8n",
+      "statusOnline": "Online",
+      "statusOffline": "Offline",
+      "statusConnecting": "Connecting..."
+    },
+    "messages": {
+      "welcomeMessage": "👋 Hello! I'm your AI assistant. How can I help you today?",
+      "errorMessage": "Sorry, I couldn't connect to the server. Please try again later.",
+      "connectionError": "Connection error: ",
+      "typingIndicator": "AI is typing...",
+      "footer": {
+        "enabled": true,
+        "botName": "Assistant",
+        "userName": "You",
+        "showTimestamp": true,
+        "timestampFormat": "24h",
+        "showDate": true,
+        "dateFormat": "short"
+      }
+    },
+    "input": {
+      "placeholder": "Type your message...",
+      "sendButtonAriaLabel": "Send message",
+      "hint": "Press Enter to send, Shift + Enter for new line"
+    },
+    "suggestions": [
+      {
+        "text": "How can you help me?",
+        "value": "What can you help me with?"
+      },
+      {
+        "text": "Tell me more",
+        "value": "Can you tell me more about your features?"
+      },
+      {
+        "text": "Get started",
+        "value": "How do I get started?"
+      },
+      {
+        "text": "Contact support",
+        "value": "I need help with a specific issue"
+      }
+    ],
+    "button": {
+      "openIcon": "💬",
+      "closeIcon": "✕",
+      "sendIcon": "➤"
+    }
+  },
+  "behavior": {
+    "autoOpen": false,
+    "autoOpenDelay": 0,
+    "enableSuggestions": true,
+    "enableTypingIndicator": true,
+    "enableMarkdown": true,
+    "enableSoundNotifications": false,
+    "sessionPersistence": true,
+    "messageHistory": true,
+    "maxMessageLength": 10000,
+    "disableConsoleInProduction": true,
+    "preventDevTools": false,
+    "rateLimit": {
+      "enabled": false,
+      "maxMessagesPerMinute": 20
+    },
+    "scrollBehavior": {
+      "autoScroll": true,
+      "scrollThreshold": 100
+    }
+  },
+  "localization": {
+    "locale": "en",
+    "dateFormat": "MMM DD, YYYY",
+    "timeFormat": "HH:mm",
+    "rtl": false
+  },
+  "integrations": {
+    "analytics": {
+      "enabled": false,
+      "provider": null,
+      "trackingId": null
+    },
+    "customHeaders": {},
+    "customMetadata": {}
+  },
+  "accessibility": {
+    "enableKeyboardShortcuts": true,
+    "announceMessages": true,
+    "highContrast": false,
+    "focusOutline": true
+  },
+  "mobile": {
+    "enabled": true,
+    "fullscreen": true,
+    "breakpoint": 480
+  }
+}
