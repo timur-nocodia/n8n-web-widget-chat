@@ -415,6 +415,35 @@ async def get_session_stats():
         }
 
 
+# Static file serving for widget  
+@app.get("/widget/{file_path:path}")
+async def serve_widget_files(file_path: str):
+    """Serve widget static files"""
+    import os
+    from fastapi.responses import FileResponse
+    
+    # Support both Docker and local development paths
+    widget_dirs = ["./chat-widget", "../chat-widget"]
+    full_path = None
+    
+    for widget_dir in widget_dirs:
+        candidate_path = os.path.join(widget_dir, file_path)
+        if os.path.exists(candidate_path) and os.path.isfile(candidate_path):
+            full_path = candidate_path
+            break
+    
+    if not full_path:
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Add no-cache headers to prevent caching issues
+    headers = {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    }
+    return FileResponse(full_path, headers=headers)
+
+
 # Cleanup task
 async def cleanup_old_data():
     """Clean up old sessions and rate limit data"""
