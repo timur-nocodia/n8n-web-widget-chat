@@ -3,10 +3,6 @@
   "version": "1.0.0",
   "description": "Secure chat proxy system for e-commerce platforms",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
     "setup": "./scripts/setup.sh",
     "remove-logs": "./scripts/remove-logs.sh",
