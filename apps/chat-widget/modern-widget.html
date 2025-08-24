@@ -1676,8 +1676,9 @@
         }
 
         class BackgroundResponseManager {
-            constructor(storage) {
+            constructor(storage, config) {
                 this.storage = storage;
+                this.config = config;
                 this.activeConnections = new Map(); // sessionId -> connection info
                 this.pendingMessages = new Map(); // sessionId -> message data
                 
@@ -1686,7 +1687,7 @@
             }
             
             async startBackgroundCollection(sessionId, message, apiBase) {
-                console.log('🔄 Starting background collection for session:', sessionId);
+                console.log('🔄', this.config.get('texts.messages.backgroundActivity.backgroundCollectionStarted', 'Starting background collection for session') + ':', sessionId);
                 
                 // Store pending message info
                 this.pendingMessages.set(sessionId, {
@@ -1722,7 +1723,7 @@
                 this.activeConnections.set(sessionId, connectionInfo);
                 
                 eventSource.onopen = () => {
-                    console.log('✅ Background SSE connection established for session:', sessionId);
+                    console.log('✅', this.config.get('texts.messages.backgroundActivity.backgroundConnectionEstablished', 'Background SSE connection established for session') + ':', sessionId);
                     connectionInfo.status = 'connected';
                     this.updatePendingStatus(sessionId, 'streaming');
                 };
@@ -1731,13 +1732,13 @@
                     const data = event.data;
                     
                     if (data === '[DONE]') {
-                        console.log('✅ Background collection completed for session:', sessionId);
+                        console.log('✅', this.config.get('texts.messages.backgroundActivity.backgroundCollectionCompleted', 'Background collection completed for session') + ':', sessionId);
                         eventSource.close();
                         
                         // Save final response to storage
                         if (streamedText) {
                             await this.storage.saveMessage(streamedText, 'assistant', sessionId);
-                            console.log('💾 Background response saved to storage:', sessionId);
+                            console.log('💾', this.config.get('texts.messages.backgroundActivity.backgroundResponseSaved', 'Background response saved to storage') + ':', sessionId);
                         }
                         
                         // Mark as completed
@@ -1752,7 +1753,7 @@
                             const parsed = JSON.parse(data);
                             
                             if (parsed.type === 'begin') {
-                                console.log('🏁 Background stream beginning for session:', sessionId);
+                                console.log('🏁', this.config.get('texts.messages.backgroundActivity.backgroundStreamBeginning', 'Background stream beginning for session') + ':', sessionId);
                                 connectionInfo.status = 'streaming';
                                 streamedText = '';
                                 
@@ -1762,7 +1763,7 @@
                                 console.log(`📦 Background content accumulated for ${sessionId}:`, parsed.content.length, 'chars');
                                 
                             } else if (parsed.type === 'end') {
-                                console.log('🏁 Background stream ending for session:', sessionId);
+                                console.log('🏁', this.config.get('texts.messages.backgroundActivity.backgroundStreamEnding', 'Background stream ending for session') + ':', sessionId);
                             }
                             
                         } catch (e) {
@@ -1772,7 +1773,7 @@
                 };
                 
                 eventSource.onerror = (error) => {
-                    console.error('❌ Background SSE error for session:', sessionId, error);
+                    console.error('❌', this.config.get('texts.messages.backgroundActivity.backgroundConnectionError', 'Background SSE error for session') + ':', sessionId, error);
                     this.updatePendingStatus(sessionId, 'error');
                     this.activeConnections.delete(sessionId);
                     this.cleanupPendingMessage(sessionId);
@@ -1790,15 +1791,16 @@
                         const data = JSON.parse(localStorage.getItem(key));
                         const sessionId = key.replace('bg_pending_', '');
                         
-                        // Check if more than 5 minutes old, cleanup if so
-                        if (Date.now() - data.timestamp > 300000) {
+                        // Check if older than configured timeout, cleanup if so
+                        const timeout = this.config.get('behavior.backgroundActivity.connectionTimeout', 300000);
+                        if (Date.now() - data.timestamp > timeout) {
                             localStorage.removeItem(key);
                             continue;
                         }
                         
                         // If still recent and pending/streaming, try to reconnect
                         if (data.status === 'pending' || data.status === 'streaming') {
-                            console.log('🔄 Restoring background connection for session:', sessionId);
+                            console.log('🔄', this.config.get('texts.messages.backgroundActivity.restoringBackgroundConnection', 'Restoring background connection for session') + ':', sessionId);
                             this.pendingMessages.set(sessionId, data);
                         }
                         
@@ -1843,7 +1845,7 @@
                     connection.eventSource.close();
                     this.activeConnections.delete(sessionId);
                     this.cleanupPendingMessage(sessionId);
-                    console.log('🔌 Closed background connection for session:', sessionId);
+                    console.log('🔌', this.config.get('texts.messages.backgroundActivity.backgroundConnectionClosed', 'Closed background connection for session') + ':', sessionId);
                 }
             }
             
@@ -1854,7 +1856,7 @@
                     }
                 }
                 this.activeConnections.clear();
-                console.log('🔌 Closed all background connections');
+                console.log('🔌', this.config.get('texts.messages.backgroundActivity.backgroundConnectionsAllClosed', 'Closed all background connections'));
             }
         }
 
@@ -1870,7 +1872,7 @@
                 this.streamingBuffer = null;  // Progressive streaming buffer
                 this.storage = new BrowserChatStorage();
                 this.backgroundConnections = new Map(); // Track background SSE connections
-                this.backgroundResponseManager = new BackgroundResponseManager(this.storage);
+                this.backgroundResponseManager = new BackgroundResponseManager(this.storage, this.config);
                 
                 this.initializeElements();
                 this.attachEventListeners();
@@ -2118,15 +2120,20 @@
             }
 
             setupBackgroundActivityChecker() {
-                // Check for background activity every 5 seconds when chat is open
+                // Check for background activity at configurable interval
+                const interval = this.config.get('behavior.backgroundActivity.checkInterval', 5000);
                 this.backgroundActivityInterval = setInterval(async () => {
                     await this.checkBackgroundActivity();
-                }, 5000);
+                }, interval);
 
                 // Also check immediately when user opens the chat (handled in toggleChat method)
             }
 
             async checkBackgroundActivity() {
+                if (!this.config.get('behavior.backgroundActivity.enabled', true)) {
+                    return;
+                }
+                
                 try {
                     // Check all sessions for background activity
                     const sessions = await this.storage.getAllSessions();
@@ -2136,7 +2143,7 @@
                         const pendingStatus = this.backgroundResponseManager.getPendingStatus(session.id);
                         
                         if (pendingStatus && pendingStatus.status === 'completed') {
-                            console.log('🔔 Found completed background response for session:', session.id);
+                            console.log('🔔', this.config.get('texts.messages.backgroundActivity.foundCompletedBackgroundResponse', 'Found completed background response for session') + ':', session.id);
                             hasNewResponses = true;
                             
                             // Update session UI to show new response
@@ -2154,8 +2161,8 @@
                         // Refresh session history to show updated previews and counts
                         await this.loadSessionHistory();
                         
-                        // Show notification badge if chat is closed
-                        if (!this.isOpen) {
+                        // Show notification badge if chat is closed and notifications are enabled
+                        if (!this.isOpen && this.config.get('behavior.backgroundActivity.enableNotifications', true)) {
                             this.showNotificationBadge();
                         }
                     }
@@ -2179,20 +2186,25 @@
                     }
                     
                     this.scrollToBottom();
-                    console.log('🔄 Refreshed current session messages:', this.sessionId);
+                    console.log('🔄', this.config.get('texts.messages.backgroundActivity.refreshedCurrentSessionMessages', 'Refreshed current session messages') + ':', this.sessionId);
                 } catch (error) {
                     console.error('Error refreshing current session messages:', error);
                 }
             }
 
             showNotificationBadge() {
+                if (!this.config.get('texts.notifications.badge.enabled', true)) {
+                    return;
+                }
+                
                 const chatToggle = document.getElementById('chatToggle');
                 if (chatToggle) {
                     let badge = chatToggle.querySelector('.notification-badge');
                     if (!badge) {
                         badge = document.createElement('div');
                         badge.className = 'notification-badge';
-                        badge.textContent = '!';
+                        badge.textContent = this.config.get('texts.notifications.badge.text', '!');
+                        badge.setAttribute('aria-label', this.config.get('texts.notifications.badge.ariaLabel', 'New messages available'));
                         chatToggle.appendChild(badge);
                     }
                     badge.style.display = 'block';
@@ -2207,6 +2219,11 @@
             }
 
             updateBackgroundActivityIndicators() {
+                if (!this.config.get('behavior.backgroundActivity.enableVisualIndicators', true) || 
+                    !this.config.get('texts.notifications.indicators.backgroundActivity.enabled', true)) {
+                    return;
+                }
+                
                 // Show indicators for sessions with active background processing
                 const sessionItems = document.querySelectorAll('.session-item');
                 
@@ -2225,8 +2242,9 @@
                     if (hasActiveConnection || (pendingStatus && pendingStatus.status !== 'completed')) {
                         const indicator = document.createElement('div');
                         indicator.className = 'background-activity-indicator';
-                        indicator.innerHTML = '⏳';
-                        indicator.title = 'Response in progress...';
+                        indicator.innerHTML = this.config.get('texts.notifications.indicators.backgroundActivity.icon', '⏳');
+                        indicator.title = this.config.get('texts.notifications.indicators.backgroundActivity.tooltip', 'Response in progress...');
+                        indicator.setAttribute('aria-label', this.config.get('texts.notifications.indicators.backgroundActivity.ariaLabel', 'Response in progress'));
                         item.appendChild(indicator);
                     }
                 });
@@ -2721,7 +2739,7 @@
                     // Modified cleanup: Only close foreground connection, keep background running
                     const cleanupForeground = () => {
                         eventSource.close();
-                        console.log('🔌 Closed foreground SSE connection, background continues');
+                        console.log('🔌', this.config.get('texts.messages.backgroundActivity.foregroundConnectionClosed', 'Closed foreground SSE connection, background continues'));
                     };
                     window.addEventListener('beforeunload', cleanupForeground);
 
