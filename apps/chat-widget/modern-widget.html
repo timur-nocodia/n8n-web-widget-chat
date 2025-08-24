@@ -658,6 +658,61 @@
             position: relative;
         }
 
+        /* Background activity indicator */
+        .background-activity-indicator {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(255, 165, 0, 0.9);
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            z-index: 10;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        /* Notification badge for chat toggle */
+        .notification-badge {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            background: #ff4444;
+            color: white;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            z-index: 1000;
+            animation: bounce 0.5s ease-in-out;
+        }
+
+        @keyframes bounce {
+            0%, 20%, 50%, 80%, 100% {
+                transform: translateY(0);
+            }
+            40% {
+                transform: translateY(-5px);
+            }
+            60% {
+                transform: translateY(-3px);
+            }
+        }
+
         .new-chat-btn {
             background: var(--primary-gradient);
             border: none;
@@ -1525,6 +1580,42 @@
                 
                 return then.toLocaleDateString();
             }
+
+            // === MIGRATION HELPERS ===
+            
+            async migrateLocalStorageToIndexedDB() {
+                if (!this.db || !this.db.transaction) return;
+                
+                try {
+                    // Find localStorage sessions
+                    const keys = Object.keys(localStorage).filter(k => k.startsWith('session_'));
+                    if (keys.length === 0) return;
+                    
+                    console.log('🔄 Migrating', keys.length, 'localStorage sessions to IndexedDB...');
+                    
+                    for (const key of keys) {
+                        const session = JSON.parse(localStorage.getItem(key) || 'null');
+                        if (session) {
+                            // Add to IndexedDB
+                            const transaction = this.db.transaction(['sessions'], 'readwrite');
+                            const store = transaction.objectStore('sessions');
+                            await new Promise((resolve, reject) => {
+                                const request = store.put(session);
+                                request.onsuccess = () => resolve();
+                                request.onerror = () => reject(request.error);
+                            });
+                            
+                            // Remove from localStorage
+                            localStorage.removeItem(key);
+                            console.log('✅ Migrated session:', session.id);
+                        }
+                    }
+                    
+                    console.log('🎉 Migration complete!');
+                } catch (error) {
+                    console.error('❌ Migration failed:', error);
+                }
+            }
         }
 
         // StreamingBuffer class for handling progressive text rendering
@@ -1584,6 +1675,189 @@
             }
         }
 
+        class BackgroundResponseManager {
+            constructor(storage) {
+                this.storage = storage;
+                this.activeConnections = new Map(); // sessionId -> connection info
+                this.pendingMessages = new Map(); // sessionId -> message data
+                
+                // Restore active connections on page load
+                this.restoreActiveConnections();
+            }
+            
+            async startBackgroundCollection(sessionId, message, apiBase) {
+                console.log('🔄 Starting background collection for session:', sessionId);
+                
+                // Store pending message info
+                this.pendingMessages.set(sessionId, {
+                    message,
+                    timestamp: Date.now(),
+                    status: 'pending'
+                });
+                
+                // Save to localStorage for persistence across page reloads
+                localStorage.setItem(`bg_pending_${sessionId}`, JSON.stringify({
+                    message,
+                    timestamp: Date.now(),
+                    status: 'pending',
+                    apiUrl: `${apiBase}/api/v1/chat/stream?message=${encodeURIComponent(message)}&page_url=${encodeURIComponent(window.location.href)}`
+                }));
+                
+                // Create background SSE connection
+                const sseUrl = `${apiBase}/api/v1/chat/stream?message=${encodeURIComponent(message)}&page_url=${encodeURIComponent(window.location.href)}`;
+                const eventSource = new EventSource(sseUrl, { withCredentials: true });
+                
+                let streamedText = '';
+                let isFirstChunk = true;
+                
+                const connectionInfo = {
+                    eventSource,
+                    sessionId,
+                    message,
+                    streamedText,
+                    startTime: Date.now(),
+                    status: 'connecting'
+                };
+                
+                this.activeConnections.set(sessionId, connectionInfo);
+                
+                eventSource.onopen = () => {
+                    console.log('✅ Background SSE connection established for session:', sessionId);
+                    connectionInfo.status = 'connected';
+                    this.updatePendingStatus(sessionId, 'streaming');
+                };
+                
+                eventSource.onmessage = async (event) => {
+                    const data = event.data;
+                    
+                    if (data === '[DONE]') {
+                        console.log('✅ Background collection completed for session:', sessionId);
+                        eventSource.close();
+                        
+                        // Save final response to storage
+                        if (streamedText) {
+                            await this.storage.saveMessage(streamedText, 'assistant', sessionId);
+                            console.log('💾 Background response saved to storage:', sessionId);
+                        }
+                        
+                        // Mark as completed
+                        this.updatePendingStatus(sessionId, 'completed');
+                        this.activeConnections.delete(sessionId);
+                        this.cleanupPendingMessage(sessionId);
+                        return;
+                    }
+                    
+                    if (data.trim() !== '') {
+                        try {
+                            const parsed = JSON.parse(data);
+                            
+                            if (parsed.type === 'begin') {
+                                console.log('🏁 Background stream beginning for session:', sessionId);
+                                connectionInfo.status = 'streaming';
+                                streamedText = '';
+                                
+                            } else if (parsed.type === 'item' && parsed.content) {
+                                streamedText += parsed.content;
+                                connectionInfo.streamedText = streamedText;
+                                console.log(`📦 Background content accumulated for ${sessionId}:`, parsed.content.length, 'chars');
+                                
+                            } else if (parsed.type === 'end') {
+                                console.log('🏁 Background stream ending for session:', sessionId);
+                            }
+                            
+                        } catch (e) {
+                            console.error('❌ Background JSON parse error:', e, 'Data:', data);
+                        }
+                    }
+                };
+                
+                eventSource.onerror = (error) => {
+                    console.error('❌ Background SSE error for session:', sessionId, error);
+                    this.updatePendingStatus(sessionId, 'error');
+                    this.activeConnections.delete(sessionId);
+                    this.cleanupPendingMessage(sessionId);
+                };
+                
+                return eventSource;
+            }
+            
+            async restoreActiveConnections() {
+                // Restore any pending background collections that were interrupted
+                const keys = Object.keys(localStorage).filter(key => key.startsWith('bg_pending_'));
+                
+                for (const key of keys) {
+                    try {
+                        const data = JSON.parse(localStorage.getItem(key));
+                        const sessionId = key.replace('bg_pending_', '');
+                        
+                        // Check if more than 5 minutes old, cleanup if so
+                        if (Date.now() - data.timestamp > 300000) {
+                            localStorage.removeItem(key);
+                            continue;
+                        }
+                        
+                        // If still recent and pending/streaming, try to reconnect
+                        if (data.status === 'pending' || data.status === 'streaming') {
+                            console.log('🔄 Restoring background connection for session:', sessionId);
+                            this.pendingMessages.set(sessionId, data);
+                        }
+                        
+                    } catch (e) {
+                        console.error('Error restoring background connection:', e);
+                        localStorage.removeItem(key);
+                    }
+                }
+            }
+            
+            updatePendingStatus(sessionId, status) {
+                const key = `bg_pending_${sessionId}`;
+                const data = localStorage.getItem(key);
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    parsed.status = status;
+                    parsed.lastUpdate = Date.now();
+                    localStorage.setItem(key, JSON.stringify(parsed));
+                }
+                
+                if (this.pendingMessages.has(sessionId)) {
+                    this.pendingMessages.get(sessionId).status = status;
+                }
+            }
+            
+            cleanupPendingMessage(sessionId) {
+                localStorage.removeItem(`bg_pending_${sessionId}`);
+                this.pendingMessages.delete(sessionId);
+            }
+            
+            getPendingStatus(sessionId) {
+                return this.pendingMessages.get(sessionId) || null;
+            }
+            
+            hasActiveConnection(sessionId) {
+                return this.activeConnections.has(sessionId);
+            }
+            
+            closeConnection(sessionId) {
+                const connection = this.activeConnections.get(sessionId);
+                if (connection && connection.eventSource) {
+                    connection.eventSource.close();
+                    this.activeConnections.delete(sessionId);
+                    this.cleanupPendingMessage(sessionId);
+                    console.log('🔌 Closed background connection for session:', sessionId);
+                }
+            }
+            
+            closeAllConnections() {
+                for (const [sessionId, connection] of this.activeConnections) {
+                    if (connection.eventSource) {
+                        connection.eventSource.close();
+                    }
+                }
+                this.activeConnections.clear();
+                console.log('🔌 Closed all background connections');
+            }
+        }
+
         class ModernChatWidget {
             constructor(config) {
                 this.config = config;
@@ -1595,10 +1869,13 @@
                 this.isStreaming = false;
                 this.streamingBuffer = null;  // Progressive streaming buffer
                 this.storage = new BrowserChatStorage();
+                this.backgroundConnections = new Map(); // Track background SSE connections
+                this.backgroundResponseManager = new BackgroundResponseManager(this.storage);
                 
                 this.initializeElements();
                 this.attachEventListeners();
                 this.initializeSession();
+                this.setupBackgroundActivityChecker();
                 
                 // Handle auto-open behavior
                 if (this.config.get('behavior.autoOpen', false)) {
@@ -1735,6 +2012,11 @@
                 this.widget.classList.toggle('open', this.isOpen);
                 
                 if (this.isOpen) {
+                    // Hide notification badge when opening chat
+                    this.hideNotificationBadge();
+                    
+                    // Check for background activity immediately
+                    this.checkBackgroundActivity();
                     // Check if this is the first time opening and if there are existing sessions
                     const existingSessions = await this.storage.getAllSessions();
                     
@@ -1794,10 +2076,14 @@
                 return !hasMessages && !this.suggestionsHidden;
             }
 
+
             async initializeSession() {
                 try {
                     // Initialize storage but don't show session selection here
                     // Session selection will be shown when widget is first opened in toggleChat()
+                    
+                    // Migrate any localStorage sessions to IndexedDB to fix split-brain storage
+                    await this.storage.migrateLocalStorageToIndexedDB();
                     
                     // Always start with a basic session setup - the UI decision happens in toggleChat()
                     this.sessionId = await this.storage.getOrCreateCurrentSession();
@@ -1829,6 +2115,131 @@
                     this.sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                     this.addMessage(this.config.get('texts.messages.errorMessage', 'Session restored from browser storage'), 'bot');
                 }
+            }
+
+            setupBackgroundActivityChecker() {
+                // Check for background activity every 5 seconds when chat is open
+                this.backgroundActivityInterval = setInterval(async () => {
+                    await this.checkBackgroundActivity();
+                }, 5000);
+
+                // Also check immediately when user opens the chat (handled in toggleChat method)
+            }
+
+            async checkBackgroundActivity() {
+                try {
+                    // Check all sessions for background activity
+                    const sessions = await this.storage.getAllSessions();
+                    let hasNewResponses = false;
+
+                    for (const session of sessions) {
+                        const pendingStatus = this.backgroundResponseManager.getPendingStatus(session.id);
+                        
+                        if (pendingStatus && pendingStatus.status === 'completed') {
+                            console.log('🔔 Found completed background response for session:', session.id);
+                            hasNewResponses = true;
+                            
+                            // Update session UI to show new response
+                            if (session.id === this.sessionId) {
+                                // Current session - refresh messages and scroll to bottom
+                                await this.refreshCurrentSessionMessages();
+                            }
+                            
+                            // Clean up the completed status
+                            this.backgroundResponseManager.cleanupPendingMessage(session.id);
+                        }
+                    }
+
+                    if (hasNewResponses) {
+                        // Refresh session history to show updated previews and counts
+                        await this.loadSessionHistory();
+                        
+                        // Show notification badge if chat is closed
+                        if (!this.isOpen) {
+                            this.showNotificationBadge();
+                        }
+                    }
+
+                    // Update visual indicators for active background processes
+                    this.updateBackgroundActivityIndicators();
+
+                } catch (error) {
+                    console.error('Error checking background activity:', error);
+                }
+            }
+
+            async refreshCurrentSessionMessages() {
+                try {
+                    const messages = await this.storage.getMessages(this.sessionId);
+                    
+                    // Clear and rebuild message list
+                    this.messages.innerHTML = '';
+                    for (const msg of messages) {
+                        this.addMessage(msg.content, msg.role);
+                    }
+                    
+                    this.scrollToBottom();
+                    console.log('🔄 Refreshed current session messages:', this.sessionId);
+                } catch (error) {
+                    console.error('Error refreshing current session messages:', error);
+                }
+            }
+
+            showNotificationBadge() {
+                const chatToggle = document.getElementById('chatToggle');
+                if (chatToggle) {
+                    let badge = chatToggle.querySelector('.notification-badge');
+                    if (!badge) {
+                        badge = document.createElement('div');
+                        badge.className = 'notification-badge';
+                        badge.textContent = '!';
+                        chatToggle.appendChild(badge);
+                    }
+                    badge.style.display = 'block';
+                }
+            }
+
+            hideNotificationBadge() {
+                const badge = document.querySelector('.notification-badge');
+                if (badge) {
+                    badge.style.display = 'none';
+                }
+            }
+
+            updateBackgroundActivityIndicators() {
+                // Show indicators for sessions with active background processing
+                const sessionItems = document.querySelectorAll('.session-item');
+                
+                sessionItems.forEach(item => {
+                    const sessionId = item.dataset.sessionId;
+                    const hasActiveConnection = this.backgroundResponseManager.hasActiveConnection(sessionId);
+                    const pendingStatus = this.backgroundResponseManager.getPendingStatus(sessionId);
+                    
+                    // Remove existing indicators
+                    const existingIndicator = item.querySelector('.background-activity-indicator');
+                    if (existingIndicator) {
+                        existingIndicator.remove();
+                    }
+                    
+                    // Add new indicator if there's background activity
+                    if (hasActiveConnection || (pendingStatus && pendingStatus.status !== 'completed')) {
+                        const indicator = document.createElement('div');
+                        indicator.className = 'background-activity-indicator';
+                        indicator.innerHTML = '⏳';
+                        indicator.title = 'Response in progress...';
+                        item.appendChild(indicator);
+                    }
+                });
+            }
+
+            cleanup() {
+                // Clear background activity checker
+                if (this.backgroundActivityInterval) {
+                    clearInterval(this.backgroundActivityInterval);
+                }
+                
+                // Close all background connections
+                this.backgroundResponseManager.closeAllConnections();
             }
 
             // === SESSION HISTORY UI METHODS ===
@@ -2083,10 +2494,10 @@
                 if (!this.sessionId) {
                     this.sessionId = await this.storage.createNewSession();
                     console.log('✅ New session created on first message:', this.sessionId);
-                    
-                    // Immediately refresh session history so it appears in the UI
-                    await this.loadSessionHistory();
                 }
+                
+                // Always refresh session history when sending messages to ensure UI is current
+                await this.loadSessionHistory();
 
                 // Clear input and permanently hide suggestions after first message
                 this.input.value = '';
@@ -2127,9 +2538,16 @@
                 let lastChunkTime = startTime;
 
                 try {
-                    // 🚀 REAL SSE: Use EventSource for true real-time streaming without buffering
+                    // 🚀 BACKGROUND ASYNC: Start background collection first
+                    const backgroundConnection = await this.backgroundResponseManager.startBackgroundCollection(
+                        this.sessionId, 
+                        message, 
+                        this.API_BASE
+                    );
+                    
+                    // 🚀 FOREGROUND SSE: Use EventSource for real-time streaming display
                     const sseUrl = `${this.API_BASE}/api/v1/chat/stream?message=${encodeURIComponent(message)}&page_url=${encodeURIComponent(window.location.href)}`;
-                    console.log('🔗 Attempting SSE connection to:', sseUrl);
+                    console.log('🔗 Attempting foreground SSE connection to:', sseUrl);
                     
                     const eventSource = new EventSource(sseUrl, {
                         withCredentials: true
@@ -2300,8 +2718,12 @@
                         }
                     };
                     
-                    // Cleanup on page unload
-                    window.addEventListener('beforeunload', () => eventSource.close());
+                    // Modified cleanup: Only close foreground connection, keep background running
+                    const cleanupForeground = () => {
+                        eventSource.close();
+                        console.log('🔌 Closed foreground SSE connection, background continues');
+                    };
+                    window.addEventListener('beforeunload', cleanupForeground);
 
                 } catch (error) {
                     if (typingElement) {
