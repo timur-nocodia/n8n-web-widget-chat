@@ -1,4 +1,4 @@
-# 🤖 n8n Chat Widget - Production Ready
+# 🤖 n8n Ai Streaming Chat Widget
 
 A lightweight, production-ready chat widget system that seamlessly integrates with n8n workflows for AI-powered customer support. Features real-time streaming, unread message notifications, and enterprise-grade security.
 
