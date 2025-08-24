@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Dict, Optional
 
+from dotenv import load_dotenv
+
 import httpx
 import jwt
 import uvicorn
@@ -20,6 +22,9 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(level=logging.WARNING)
@@ -135,15 +140,20 @@ def verify_session_token(token: str, client_ip: str, user_agent: str) -> Optiona
 
 
 def create_n8n_token(
-    session_id: str, message_history: list = None, session_metadata: dict = None
+    session_id: str, client_ip: str, user_agent: str, page_url: str = None
 ) -> str:
-    """Create JWT token for n8n validation"""
+    """Create JWT token for n8n validation - matches production format"""
+    now = datetime.utcnow()
     payload = {
         "session_id": session_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "message_history": message_history or [],
-        "session_metadata": session_metadata or {},
-        "exp": datetime.utcnow() + timedelta(seconds=30),  # Short-lived token
+        "origin_domain": page_url.split("/")[2] if page_url else "unknown",
+        "page_url": page_url,
+        "client_ip": client_ip,
+        "server_ip": "127.0.0.1",  # Our server IP
+        "user_agent": user_agent,
+        "timestamp": now.timestamp(),
+        "iat": now,
+        "exp": now + timedelta(seconds=30),  # Short-lived token
     }
     return jwt.encode(payload, SESSION_SECRET, algorithm="HS256")
 
@@ -255,13 +265,20 @@ async def stream_chat(
     if not session_id:
         session_id = f"temp_{int(time.time())}_{str(uuid.uuid4())[:8]}"
 
-    # Create n8n token with session data
+    # Create n8n token with session data - matches production format  
     n8n_token = create_n8n_token(
-        session_id, message_data.message_history, message_data.session_metadata
+        session_id, client_ip, user_agent, message_data.page_url
     )
 
     async def stream_from_n8n():
         try:
+            # TIMESTAMP BASELINE - Lock message send time
+            request_start = time.time()
+            baseline_ms = int(request_start * 1000)
+            print(f"🚀 [PROXY-T0] BASELINE: Message sent to n8n at {baseline_ms}ms")
+            print(f"🔍 [DEBUG] N8N_WEBHOOK_URL = {N8N_WEBHOOK_URL}")
+            print(f"🔍 [DEBUG] JWT Token created: {len(n8n_token)} chars")
+            
             headers = {
                 "Authorization": f"Bearer {n8n_token}",
                 "Content-Type": "application/json",
@@ -286,20 +303,67 @@ async def stream_chat(
                 },
             }
 
+            # Debug URL before making request
+            print(f"🔍 [DEBUG] About to connect to N8N_WEBHOOK_URL: '{N8N_WEBHOOK_URL}'")
+            print(f"🔍 [DEBUG] URL type: {type(N8N_WEBHOOK_URL)}")
+
             async with httpx.AsyncClient() as client:
                 async with client.stream(
-                    "POST", N8N_WEBHOOK_URL, headers=headers, json=payload, timeout=30.0
+                    "POST", N8N_WEBHOOK_URL, headers=headers, json=payload, timeout=120.0
                 ) as response:
+                    connection_time = time.time()
+                    connection_delay = int((connection_time - request_start) * 1000)
+                    print(f"📡 [PROXY-T1] n8n connection established at +{connection_delay}ms")
+                    
                     if response.status_code != 200:
                         yield f"data: Error: Failed to connect to AI service (status: {response.status_code})\n\n"
                         yield "data: [DONE]\n\n"
                         return
 
-                    async for chunk in response.aiter_text():
-                        if chunk.strip():
-                            # Forward n8n chunks directly
-                            yield f"data: {chunk}\n\n"
+                    chunk_count = 0
+                    first_chunk_time = None
+                    last_chunk_time = request_start
+                    buffer = ""
+                    
+                    # Stream bytes and reassemble complete JSON objects
+                    async for chunk in response.aiter_bytes(chunk_size=1024):
+                        if chunk:
+                            received_time = time.time()
+                            received_delay = int((received_time - request_start) * 1000)
+                            
+                            # Track first chunk timing
+                            if first_chunk_time is None:
+                                first_chunk_time = received_time
+                                first_chunk_delay = int((first_chunk_time - request_start) * 1000)
+                                print(f"⚡ [PROXY-FIRST] First chunk at +{first_chunk_delay}ms (TTFB)")
+                            
+                            # Calculate inter-chunk delay
+                            inter_chunk_delay = int((received_time - last_chunk_time) * 1000)
+                            last_chunk_time = received_time
+                            
+                            # Decode and add to buffer
+                            chunk_text = chunk.decode('utf-8', errors='ignore')
+                            buffer += chunk_text
+                            
+                            # N8N sends NDJSON (Newline-Delimited JSON) - each line is a complete JSON object
+                            lines = buffer.split('\n')
+                            buffer = lines[-1]  # Keep incomplete line in buffer
+                            
+                            for line in lines[:-1]:  # Process complete lines
+                                if line.strip():
+                                    chunk_count += 1
+                                    forward_time = time.time()
+                                    forward_delay = int((forward_time - request_start) * 1000)
+                                    
+                                    # Debug: Show what N8N actually sends
+                                    print(f"🔍 [DEBUG] N8N NDJSON LINE: '{line}'")
+                                    
+                                    print(f"📦 [PROXY-C{chunk_count:03d}] Received:+{received_delay}ms | Forwarded:+{forward_delay}ms | Gap:{inter_chunk_delay}ms | '{line[:15]}{'...' if len(line) > 15 else ''}'")
+                                    yield f"data: {line}\n\n"
 
+                    final_time = time.time()
+                    total_duration = int((final_time - request_start) * 1000)
+                    print(f"✅ [PROXY-END] Stream complete at +{total_duration}ms | Total chunks: {chunk_count}")
                     yield "data: [DONE]\n\n"
 
         except httpx.TimeoutException:
@@ -314,9 +378,12 @@ async def stream_chat(
         stream_from_n8n(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Content-Type-Options": "nosniff",
+            "Transfer-Encoding": "chunked",  # Force chunked encoding
+            "Content-Encoding": "identity",  # Disable compression
             "Access-Control-Allow-Origin": request.headers.get("Origin", "*"),
             "Access-Control-Allow-Credentials": "true",
         },
@@ -368,7 +435,7 @@ async def serve_widget_files(file_path: str):
 
     from fastapi.responses import FileResponse
 
-    widget_dir = "../chat-widget/dist"
+    widget_dir = "../chat-widget"
     full_path = os.path.join(widget_dir, file_path)
 
     if os.path.exists(full_path) and os.path.isfile(full_path):

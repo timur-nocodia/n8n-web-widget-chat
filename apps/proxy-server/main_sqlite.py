@@ -341,14 +341,64 @@ async def stream_chat_sqlite(
                 },
             }
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # TIMESTAMP BASELINE - Lock message send time
+            request_start = time.time()
+            baseline_ms = int(request_start * 1000)
+            print(f"🚀 [PROXY-T0] BASELINE: Message sent to n8n at {baseline_ms}ms")
+
+            async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST", N8N_WEBHOOK_URL, headers=headers, json=payload
                 ) as response:
+                    connection_time = time.time()
+                    connection_delay = int((connection_time - request_start) * 1000)
+                    print(f"📡 [PROXY-T1] n8n connection established at +{connection_delay}ms")
+                    
                     if response.status_code == 200:
-                        async for chunk in response.aiter_text():
-                            if chunk.strip():
-                                yield f"data: {chunk}\n\n"
+                        chunk_count = 0
+                        first_chunk_time = None
+                        last_chunk_time = request_start
+                        buffer = ""
+                        
+                        # Stream bytes and reassemble complete NDJSON lines
+                        async for chunk in response.aiter_bytes(chunk_size=1024):
+                            if chunk:
+                                received_time = time.time()
+                                received_delay = int((received_time - request_start) * 1000)
+                                
+                                # Track first chunk timing
+                                if first_chunk_time is None:
+                                    first_chunk_time = received_time
+                                    first_chunk_delay = int((first_chunk_time - request_start) * 1000)
+                                    print(f"⚡ [PROXY-FIRST] First chunk at +{first_chunk_delay}ms (TTFB)")
+                                
+                                # Calculate inter-chunk delay
+                                inter_chunk_delay = int((received_time - last_chunk_time) * 1000)
+                                last_chunk_time = received_time
+                                
+                                # Decode and add to buffer
+                                chunk_text = chunk.decode('utf-8', errors='ignore')
+                                buffer += chunk_text
+                                
+                                # N8N sends NDJSON (Newline-Delimited JSON) - each line is a complete JSON object
+                                lines = buffer.split('\n')
+                                buffer = lines[-1]  # Keep incomplete line in buffer
+                                
+                                for line in lines[:-1]:  # Process complete lines
+                                    if line.strip():
+                                        chunk_count += 1
+                                        forward_time = time.time()
+                                        forward_delay = int((forward_time - request_start) * 1000)
+                                        
+                                        # Debug: Show what N8N actually sends
+                                        print(f"🔍 [DEBUG] N8N NDJSON LINE: '{line}'")
+                                        
+                                        print(f"📦 [PROXY-C{chunk_count:03d}] Received:+{received_delay}ms | Forwarded:+{forward_delay}ms | Gap:{inter_chunk_delay}ms | '{line[:15]}{'...' if len(line) > 15 else ''}'")
+                                        yield f"data: {line}\n\n"
+                        
+                        final_time = time.time()
+                        total_duration = int((final_time - request_start) * 1000)
+                        print(f"✅ [PROXY-END] Stream complete at +{total_duration}ms | Total chunks: {chunk_count}")
                         yield "data: [DONE]\n\n"
                     else:
                         yield "data: Error: Service unavailable\n\n"
@@ -361,9 +411,14 @@ async def stream_chat_sqlite(
         stream_response(),
         media_type="text/event-stream",
         headers={
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+            "X-Content-Type-Options": "nosniff",
+            "Transfer-Encoding": "chunked",  # Force chunked encoding
+            "Content-Encoding": "identity",  # Disable compression
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Credentials": "true",
         },
     )
 
