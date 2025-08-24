@@ -215,6 +215,10 @@ async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict
                                     logger.info(
                                         f"Streaming started for node: {json_obj.get('metadata', {}).get('nodeName')}"
                                     )
+                                    # Send the complete JSON structure that client expects
+                                    json_response = json.dumps(json_obj)
+                                    sse_data = f"data: {json_response}\n\n"
+                                    yield sse_data.encode("utf-8")
 
                                 elif chunk_type == "item":
                                     # Stream content immediately as it arrives from n8n
@@ -224,17 +228,9 @@ async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict
                                             f"Chunk from n8n: {repr(content[:20])}"
                                         )
 
-                                        # Option 1: Send as single chunk (current n8n behavior)
-                                        # escaped_content = content.replace('\n', '\\n').replace('\r', '\\r')
-                                        # sse_data = f"data: {escaped_content}\n\n"
-                                        # yield sse_data.encode('utf-8')
-
-                                        # Option 2: Send chunks as-is for real-time streaming
-                                        # (n8n already sends in small chunks)
-                                        escaped_content = content.replace(
-                                            "\n", "\\n"
-                                        ).replace("\r", "\\r")
-                                        sse_data = f"data: {escaped_content}\n\n"
+                                        # Send the complete JSON structure that client expects
+                                        json_response = json.dumps(json_obj)
+                                        sse_data = f"data: {json_response}\n\n"
                                         yield sse_data.encode("utf-8")
                                         # Force immediate flush
                                         await asyncio.sleep(0)
@@ -244,23 +240,28 @@ async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict
                                     logger.info(
                                         f"Streaming ended for node: {json_obj.get('metadata', {}).get('nodeName')}"
                                     )
+                                    # Send the complete JSON structure that client expects
+                                    json_response = json.dumps(json_obj)
+                                    sse_data = f"data: {json_response}\n\n"
+                                    yield sse_data.encode("utf-8")
 
                                 elif chunk_type == "error":
                                     # Handle error from n8n
                                     error_content = json_obj.get(
                                         "content", "Unknown error"
                                     )
-                                    yield f"data: Error: {error_content}\n\n".encode(
-                                        "utf-8"
-                                    )
+                                    # Send the complete JSON structure that client expects
+                                    json_response = json.dumps(json_obj)
+                                    sse_data = f"data: {json_response}\n\n"
+                                    yield sse_data.encode("utf-8")
 
                             except json.JSONDecodeError:
-                                # If not JSON, treat as plain text
+                                # If not JSON, treat as plain text and wrap in proper JSON
                                 if line and not line.startswith("{"):
-                                    escaped_line = line.replace("\n", "\\n").replace(
-                                        "\r", "\\r"
-                                    )
-                                    yield f"data: {escaped_line}\n\n".encode("utf-8")
+                                    plain_text_json = {"type": "item", "content": line}
+                                    json_response = json.dumps(plain_text_json)
+                                    sse_data = f"data: {json_response}\n\n"
+                                    yield sse_data.encode("utf-8")
 
                 # Handle remaining buffer
                 if buffer.strip():
@@ -269,22 +270,27 @@ async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict
                         if json_obj.get("type") == "item":
                             content = json_obj.get("content", "")
                             if content:
-                                escaped_content = content.replace("\n", "\\n").replace(
-                                    "\r", "\\r"
-                                )
-                                yield f"data: {escaped_content}\n\n".encode("utf-8")
+                                # Send the complete JSON structure that client expects
+                                json_response = json.dumps(json_obj)
+                                sse_data = f"data: {json_response}\n\n"
+                                yield sse_data.encode("utf-8")
                     except json.JSONDecodeError:
                         if buffer.strip():
-                            escaped_buffer = (
-                                buffer.strip().replace("\n", "\\n").replace("\r", "\\r")
-                            )
-                            yield f"data: {escaped_buffer}\n\n".encode("utf-8")
+                            # Wrap plain text in proper JSON format
+                            plain_text_json = {"type": "item", "content": buffer.strip()}
+                            json_response = json.dumps(plain_text_json)
+                            sse_data = f"data: {json_response}\n\n"
+                            yield sse_data.encode("utf-8")
             else:
                 # Fallback for non-200 status
                 fallback_msg = (
                     f"Echo (n8n unavailable, status {response.status_code}): {message}"
                 )
-                yield f"data: {fallback_msg}\n\n".encode("utf-8")
+                # Wrap in proper JSON format
+                fallback_json = {"type": "item", "content": fallback_msg}
+                json_response = json.dumps(fallback_json)
+                sse_data = f"data: {json_response}\n\n"
+                yield sse_data.encode("utf-8")
 
         # Send completion signal
         yield "data: [DONE]\n\n".encode("utf-8")
