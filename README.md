@@ -37,7 +37,7 @@ That's it! Your chat widget is running. 🎉
 - 🌐 **Multi-language support** ready
 
 ### **Proxy Server** (Backend)
-- 🏃 **Three deployment modes**: Stateless, SQLite, or PostgreSQL
+- 🏃 **Three deployment modes**: Stateless, SQLite, or Production
 - 🔐 **JWT-based security** with session management
 - ⚡ **Rate limiting** and DDoS protection
 - 🔄 **n8n integration** with streaming support
@@ -56,10 +56,10 @@ That's it! Your chat widget is running. 🎉
 - **Basic analytics** - track usage
 - **Still browser-first** - for chat history
 
-### Option 3: **PostgreSQL Mode** (Enterprise)
-- **Full persistence** - server-side storage
-- **Advanced features** - complex analytics
-- **Higher maintenance** - database management
+### Option 3: **Production Mode** (Optimized)
+- **Multi-worker support** - handles high traffic
+- **Production tuned** - optimized performance
+- **Enterprise ready** - for production deployments
 
 ## Configuration
 

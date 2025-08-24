@@ -3,34 +3,30 @@ version: '3.8'
 services:
   chat-proxy:
     build: .
+    container_name: ${CONTAINER_NAME:-n8n-chat-proxy}
+    image: n8n-chat-proxy:${IMAGE_TAG:-latest}
     ports:
-      - "8000:8000"
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://postgres:postgres@db:5432/chat_proxy}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - SESSION_SECRET_KEY=${SESSION_SECRET_KEY}
-      - N8N_WEBHOOK_URL=${N8N_WEBHOOK_URL}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:8000}
-      - LOG_LEVEL=${LOG_LEVEL:-WARNING}
-    depends_on:
-      - db
-      - redis
-    restart: unless-stopped
-
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=chat_proxy
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      # Override any environment variables if needed
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      # Mount SQLite database file if using SQLite mode
+      - ./data:/app/data
     restart: unless-stopped
+    networks:
+      - chat-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-
-volumes:
-  postgres_data:
+networks:
+  chat-network:
+    name: ${NETWORK_NAME:-n8n-chat-network}
+    driver: bridge

@@ -1,25 +1,36 @@
-# Chat Proxy Server - Production Backend
+# Chat Proxy Server - Backend
 
-Secure, production-ready backend for handling chat widget requests and n8n integration.
+Secure, scalable backend for handling chat widget requests and n8n integration.
 
 ## Architecture
 
-This is the production backend with:
+This backend supports multiple deployment modes:
+
+### Stateless Mode (Recommended)
 - **FastAPI** framework with async support
-- **PostgreSQL** for session storage
-- **Redis** for rate limiting and caching
+- **No database dependencies** - all session data in browser
+- **In-memory rate limiting** (resets on restart)
 - **JWT authentication** with dual-key system (SESSION_SECRET_KEY for n8n)
 - **SSE streaming** for real-time responses
-- **Security middleware** (rate limiting, CORS, threat detection)
-- **Connection pooling** and circuit breakers
+- **Minimal dependencies** for maximum compatibility
+
+### SQLite Mode
+- Lightweight **SQLite database** for session tracking
+- **Persistent rate limiting** across restarts
+- **Aiosqlite** for async database operations
+- Simple backup (single .db file)
+
+### Production Mode
+- Optimized for production deployment
+- Multi-worker support
+- Enhanced performance tuning
 
 ## Quick Start
 
 ### Prerequisites
 - Python 3.9+
-- PostgreSQL running on localhost:5432
-- Redis running on localhost:6379
 - Virtual environment
+- Access to n8n instance with configured webhook
 
 ### Installation
 
@@ -28,26 +39,41 @@ This is the production backend with:
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies based on deployment mode
+pip install -r requirements-stateless.txt  # Stateless mode (recommended)
+# OR
+pip install -r requirements-sqlite.txt     # SQLite mode
 
-# No database migrations needed - schema auto-created for SQLite mode
+# Copy environment configuration from root
+cp ../.env.example ../.env
+# Edit ../.env with your configuration
 ```
 
 ### Configuration
 
-All configuration is in `.env`:
-- `JWT_SECRET_KEY`: Internal JWT signing
+All configuration is in the root `.env` file. Key variables:
+- `DEPLOYMENT_MODE`: Choose stateless, sqlite, or production
+- `JWT_SECRET_KEY`: Internal JWT signing (generate with `openssl rand -hex 32`)
 - `SESSION_SECRET_KEY`: JWT signing for n8n validation
 - `N8N_WEBHOOK_URL`: Your n8n webhook endpoint
-- `DATABASE_URL`: PostgreSQL connection string
-- `REDIS_URL`: Redis connection string
+- `ALLOWED_ORIGINS`: Domains that can embed the widget
+
+See `.env.example` in project root for complete configuration options.
 
 ### Running
 
 ```bash
-# Production mode
-python main.py
+# Stateless mode (recommended)
+python main_stateless.py
+
+# SQLite mode (with database)
+python main_sqlite.py
+
+# Production mode (optimized)
+python main_production.py
+
+# Using Docker
+cd .. && docker-compose up
 
 # Development mode with hot reload
 DEBUG=true python main.py

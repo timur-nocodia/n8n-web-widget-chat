@@ -81,6 +81,16 @@ Thumbs.db
 *.key
 *.crt
 
+# Testing and temporary files
+test_*.py
+test_*.sh
+*_test.py
+*_test.sh
+*.tmp
+*.bak
+/tmp/
+/temp/
+
 # Other
 /.playwright-mcp
 /.claude

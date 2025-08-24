@@ -13,54 +13,38 @@ This is a FastAPI-based secure chat proxy server that handles authentication, ra
 
 ## Architecture
 
-The backend uses:
+The backend supports multiple deployment modes:
+
+### Stateless Mode (Recommended)
 - **FastAPI** with async/await for high performance
-- **PostgreSQL** (async via asyncpg) for session persistence
-- **Redis** for rate limiting and caching
+- **No database dependencies** - all session data in browser
+- **In-memory rate limiting** (resets on restart)
 - **JWT tokens** with dual-key system (JWT_SECRET_KEY for internal, SESSION_SECRET_KEY for n8n)
 - **SSE (Server-Sent Events)** for real-time streaming responses
-- **SQLAlchemy** with async support for ORM
-- **Alembic** for database migrations
+
+### SQLite Mode (Optional)
+- Lightweight **SQLite** database for session tracking
+- **Persistent rate limiting** across restarts
+- **Aiosqlite** for async database operations
+- Simple backup (single .db file)
+
+### Production Mode
+- Optimized for production deployment
+- Simplified dependencies for stability
+- Multi-worker support
 
 ## Project Structure
 
 ```
 apps/proxy-server/
-├── src/
-│   ├── main.py                 # Main FastAPI app with middleware setup
-│   ├── api/v1/
-│   │   ├── router.py           # API route aggregation
-│   │   ├── deps.py             # Dependency injection
-│   │   ├── schemas.py          # Pydantic models
-│   │   └── endpoints/
-│   │       ├── chat.py         # Chat endpoints (message, stream)
-│   │       └── session.py      # Session management endpoints
-│   ├── core/
-│   │   ├── config.py           # Settings via pydantic-settings
-│   │   ├── security.py         # JWT, encryption, threat detection
-│   │   ├── session.py          # Session management logic
-│   │   ├── validation.py       # Input validation and sanitization
-│   │   └── exceptions.py       # Custom exception classes
-│   ├── db/
-│   │   └── base.py             # Database setup and connection
-│   ├── middleware/
-│   │   ├── security.py         # Security headers, CORS, origin validation
-│   │   ├── rate_limiting.py    # Rate limiting middleware
-│   │   └── error_handling.py   # Error handling, circuit breaker
-│   ├── models/
-│   │   ├── session.py          # Session SQLAlchemy model
-│   │   └── chat.py             # Chat message model
-│   └── services/
-│       ├── jwt_service.py      # JWT token generation/validation
-│       ├── n8n_client.py       # n8n webhook communication
-│       ├── rate_limiter.py     # Redis-based rate limiting
-│       └── sse_manager.py      # SSE connection management
-├── main.py                      # Development entry point
-├── main_production.py           # Production-optimized server
-├── requirements.txt             # Python dependencies
-├── Dockerfile                   # Container configuration
-├── .env.example                 # Environment template
-└── README.md                    # Backend documentation
+├── main_stateless.py            # Stateless server (no database)
+├── main_sqlite.py              # SQLite server (lightweight database)
+├── main_production.py          # Production-optimized server
+├── requirements-stateless.txt  # Minimal dependencies for stateless mode
+├── requirements-sqlite.txt     # Dependencies for SQLite mode
+├── requirements.txt            # Full dependencies (legacy)
+├── chat_sessions.db           # SQLite database file (SQLite mode only)
+└── README.md                   # Backend documentation
 ```
 
 ## Development Commands
@@ -71,33 +55,39 @@ apps/proxy-server/
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies based on deployment mode
+pip install -r requirements-stateless.txt  # For stateless mode (recommended)
+# OR
+pip install -r requirements-sqlite.txt     # For SQLite mode
 
-# Copy and configure environment
+# Copy and configure environment (from root directory)
 cp .env.example .env
 # Edit .env with your configuration
 ```
 
-### Database Setup
+### Storage Setup
 ```bash
-# No database setup needed for stateless/SQLite modes
-# SQLite schema is auto-created on startup
+# No database setup needed for stateless mode
+# SQLite mode: Database file is auto-created on first run
+# Production mode: Follow deployment-specific configuration
 ```
 
 ### Running the Server
 ```bash
-# Development mode with hot reload
-python src/main.py
+# Stateless mode (recommended - no database)
+python main_stateless.py
 
-# Production mode (simplified, no complex dependencies)
+# SQLite mode (with lightweight database)
+python main_sqlite.py
+
+# Production mode (optimized)
 python main_production.py
 
-# Production with multiple workers
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 4
+# With specific environment variables
+LOG_LEVEL=DEBUG python main_stateless.py
 
-# With specific environment
-LOG_LEVEL=DEBUG python src/main.py
+# Using Docker
+docker-compose up
 ```
 
 
@@ -117,44 +107,16 @@ mypy src/
 
 ## Configuration
 
-### Environment Variables (.env)
+### Environment Variables
 
-```bash
-# Server Configuration
-APP_NAME=chat-proxy
-DEBUG=True                      # Set False for production
-LOG_LEVEL=INFO                  # DEBUG, INFO, WARNING, ERROR
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8000
+All environment variables are configured in the root `.env` file. See `.env.example` in the project root for complete configuration options.
 
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/chat_proxy
-
-# Redis
-REDIS_URL=redis://localhost:6379/0
-
-# JWT Configuration
-JWT_SECRET_KEY=<generate-secure-key>      # For internal JWT
-SESSION_SECRET_KEY=<generate-secure-key>  # For n8n JWT validation
-JWT_ALGORITHM=HS256
-JWT_EXPIRATION_HOURS=24                   # Session duration
-
-# n8n Integration
-N8N_WEBHOOK_URL=https://your-n8n.com/webhook/chat
-N8N_API_KEY=<optional-api-key>
-
-# CORS
-ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173
-CORS_ALLOW_CREDENTIALS=True
-
-# Rate Limiting
-RATE_LIMIT_PER_MINUTE=60
-RATE_LIMIT_PER_HOUR=1000
-
-# Session
-SESSION_COOKIE_NAME=chat_session_id
-SESSION_COOKIE_MAX_AGE=86400
-```
+Key variables include:
+- `DEPLOYMENT_MODE`: Choose between stateless, sqlite, or production
+- `N8N_WEBHOOK_URL`: Your n8n webhook endpoint
+- `JWT_SECRET_KEY` and `SESSION_SECRET_KEY`: Security tokens
+- `ALLOWED_ORIGINS`: Domains that can embed the widget
+- `RATE_LIMIT_PER_MINUTE`: Request throttling
 
 ## API Endpoints
 
@@ -209,7 +171,8 @@ GET /metrics
 - Custom SSEResponse class forces immediate flushing
 
 ### Rate Limiting
-- Redis-based sliding window algorithm
+- **Stateless Mode**: In-memory rate limiting (resets on restart)
+- **SQLite Mode**: Persistent rate limiting in database
 - Multi-tier: IP-based, session-based, domain-based
 - Configurable limits per minute/hour
 - Automatic cleanup of expired entries
@@ -230,21 +193,21 @@ GET /metrics
 
 ## Development Tips
 
-1. **Database Connections**: Uses async SQLAlchemy with connection pooling
+1. **Quick Start**: Use stateless mode for instant development
 2. **Error Handling**: All exceptions logged, graceful fallbacks
 3. **Testing SSE**: Use `curl -N http://localhost:8000/api/v1/chat/stream`
-4. **Debug Mode**: Set `DEBUG=True` for detailed logging
+4. **Debug Mode**: Set `LOG_LEVEL=DEBUG` for detailed logging
 5. **Rate Limits**: Can be tested with `./scripts/test-security.sh`
 
 ## Production Considerations
 
 1. **Secrets**: Use strong, unique keys for JWT_SECRET_KEY and SESSION_SECRET_KEY
-2. **Database**: Configure connection pooling (max_overflow, pool_size)
-3. **Redis**: Use Redis Sentinel or Cluster for HA
-4. **Workers**: Run with multiple uvicorn workers
-5. **Monitoring**: Enable metrics endpoint, use APM tools
-6. **HTTPS**: Always use TLS in production
-7. **CORS**: Restrict ALLOWED_ORIGINS to actual domains
+2. **Deployment Mode**: Choose appropriate mode based on requirements
+3. **Workers**: Run with multiple uvicorn workers for production mode
+4. **Monitoring**: Enable metrics endpoint, use APM tools
+5. **HTTPS**: Always use TLS in production
+6. **CORS**: Restrict ALLOWED_ORIGINS to actual domains
+7. **Backup**: For SQLite mode, backup the .db file regularly
 
 ## Common Issues & Solutions
 
@@ -255,12 +218,13 @@ GET /metrics
 
 ### Rate Limiting Too Aggressive
 - Adjust RATE_LIMIT_PER_MINUTE in .env
-- Check Redis connection and memory
+- For stateless mode: Rate limits reset on server restart
+- For SQLite mode: Check database file permissions
 
-### Database Connection Errors
-- Verify PostgreSQL is running
-- Check DATABASE_URL format
-- No database migrations needed (SQLite schema auto-created)
+### Storage Issues
+- **Stateless Mode**: Check browser storage (IndexedDB/localStorage)
+- **SQLite Mode**: Verify write permissions for .db file
+- **Production Mode**: Check deployment-specific configuration
 
 ### CORS Errors
 - Add origin to ALLOWED_ORIGINS
@@ -268,9 +232,10 @@ GET /metrics
 
 ## Important Implementation Notes
 
-- All user inputs sanitized via `validation.py`
+- All user inputs are sanitized for security
 - JWT tokens expire and auto-refresh
-- Sessions stored in PostgreSQL, cached in Redis
+- **Stateless Mode**: Sessions stored entirely in browser
+- **SQLite Mode**: Sessions tracked in lightweight database
 - Circuit breaker prevents cascade failures
-- All async operations use proper connection pooling
+- All async operations are properly handled
 - Production server (`main_production.py`) has simplified dependencies for stability
