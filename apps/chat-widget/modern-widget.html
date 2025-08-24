@@ -1117,6 +1117,7 @@
                     });
                 } catch (error) {
                     console.error('Failed to initialize IndexedDB:', error);
+                    this.db = null; // Reset to null on failure to force localStorage usage
                 }
             }
 
@@ -1143,7 +1144,7 @@
                 };
 
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['sessions'], 'readwrite');
                         const store = transaction.objectStore('sessions');
                         await new Promise((resolve, reject) => {
@@ -1152,7 +1153,8 @@
                             request.onerror = () => reject(request.error);
                         });
                     } else {
-                        localStorage.setItem('current_session', JSON.stringify(session));
+                        localStorage.setItem('session_' + sessionId, JSON.stringify(session));
+                        localStorage.setItem('current_session_id', sessionId);
                     }
                     
                     this.currentSessionId = sessionId;
@@ -1169,7 +1171,7 @@
                 }
 
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['sessions'], 'readonly');
                         const store = transaction.objectStore('sessions');
                         const index = store.index('createdAt');
@@ -1192,10 +1194,25 @@
                             return session.id;
                         }
                     } else {
-                        const session = JSON.parse(localStorage.getItem('current_session') || 'null');
-                        if (session && session.isActive) {
-                            this.currentSessionId = session.id;
-                            return session.id;
+                        // Check for current session ID pointer
+                        const currentSessionId = localStorage.getItem('current_session_id');
+                        if (currentSessionId) {
+                            const session = JSON.parse(localStorage.getItem('session_' + currentSessionId) || 'null');
+                            if (session && session.isActive) {
+                                this.currentSessionId = session.id;
+                                return session.id;
+                            }
+                        }
+                        
+                        // Fallback: look for any active session
+                        const keys = Object.keys(localStorage).filter(k => k.startsWith('session_'));
+                        for (const key of keys) {
+                            const session = JSON.parse(localStorage.getItem(key) || 'null');
+                            if (session && session.isActive) {
+                                this.currentSessionId = session.id;
+                                localStorage.setItem('current_session_id', session.id);
+                                return session.id;
+                            }
                         }
                     }
                 } catch (error) {
@@ -1224,7 +1241,7 @@
                 };
 
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['messages'], 'readwrite');
                         const store = transaction.objectStore('messages');
                         await new Promise((resolve, reject) => {
@@ -1255,7 +1272,7 @@
                 }
 
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['messages'], 'readonly');
                         const store = transaction.objectStore('messages');
                         const index = store.index('sessionId');
@@ -1289,7 +1306,7 @@
 
             async getAllSessions() {
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['sessions'], 'readonly');
                         const store = transaction.objectStore('sessions');
                         const index = store.index('createdAt');
@@ -1346,7 +1363,7 @@
                     this.currentSessionId = sessionId;
                     
                     // Mark this session as active and others as inactive
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         // Get all sessions first
                         const allSessions = await this.getAllSessions();
                         
@@ -1386,7 +1403,7 @@
 
             async deleteSession(sessionId) {
                 try {
-                    if (this.db) {
+                    if (this.db && this.db.transaction) {
                         const transaction = this.db.transaction(['sessions', 'messages'], 'readwrite');
                         const sessionStore = transaction.objectStore('sessions');
                         const messageStore = transaction.objectStore('messages');
@@ -1464,7 +1481,7 @@
                         currentSession.isActive = false;
                         currentSession.updatedAt = new Date();
                         
-                        if (this.db) {
+                        if (this.db && this.db.transaction) {
                             const transaction = this.db.transaction(['sessions'], 'readwrite');
                             const store = transaction.objectStore('sessions');
                             await new Promise((resolve, reject) => {
