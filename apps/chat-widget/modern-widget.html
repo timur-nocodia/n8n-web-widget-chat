@@ -1648,6 +1648,9 @@
                 
                 // Initialize history UI
                 this.isHistoryOpen = false;
+                
+                // Track suggestion state
+                this.suggestionsHidden = false;
             }
 
             attachEventListeners() {
@@ -1729,10 +1732,9 @@
                         // Hide input area, send button, and suggestions
                         const inputContainer = this.input.closest('.input-container');
                         const sendButton = this.sendButton;
-                        const suggestions = this.suggestions;
                         if (inputContainer) inputContainer.style.display = 'none';
                         if (sendButton) sendButton.style.display = 'none';
-                        if (suggestions) suggestions.style.display = 'none';
+                        this.hideSuggestions();
                         
                         await this.loadSessionHistory();
                         this.isHistoryOpen = true;
@@ -1746,6 +1748,33 @@
             autoResizeInput() {
                 this.input.style.height = 'auto';
                 this.input.style.height = Math.min(this.input.scrollHeight, 120) + 'px';
+            }
+
+            // === SUGGESTION STATE MANAGEMENT ===
+            
+            showSuggestions() {
+                if (this.suggestions && !this.suggestionsHidden) {
+                    this.suggestions.style.display = 'flex';
+                    console.log('✅ Suggestions shown');
+                }
+            }
+            
+            hideSuggestions() {
+                if (this.suggestions) {
+                    this.suggestions.style.display = 'none';
+                    console.log('🚫 Suggestions hidden');
+                }
+            }
+            
+            permanentlyHideSuggestions() {
+                this.suggestionsHidden = true;
+                this.hideSuggestions();
+                console.log('🔒 Suggestions permanently hidden for this session');
+            }
+            
+            shouldShowSuggestions(hasMessages) {
+                // Only show suggestions for truly new conversations (no user messages)
+                return !hasMessages && !this.suggestionsHidden;
             }
 
             async initializeSession() {
@@ -1765,6 +1794,12 @@
                             this.addMessage(msg.content, msg.role);
                         }
                         this.scrollToBottom();
+                        
+                        // Hide suggestions for sessions that have user messages
+                        const hasUserMessages = messages.some(msg => msg.role === 'user');
+                        if (hasUserMessages) {
+                            this.permanentlyHideSuggestions();
+                        }
                     }
 
                     console.log('✅ Session initialized:', this.sessionId, `(${messages.length} messages loaded)`);
@@ -1791,10 +1826,9 @@
                     // Hide input area, send button, and suggestions when in session selection
                     const inputContainer = this.input.closest('.input-container');
                     const sendButton = this.sendButton;
-                    const suggestions = this.suggestions;
                     if (inputContainer) inputContainer.style.display = 'none';
                     if (sendButton) sendButton.style.display = 'none';
-                    if (suggestions) suggestions.style.display = 'none';
+                    this.hideSuggestions();
                     
                     await this.loadSessionHistory();
                 } else {
@@ -1802,13 +1836,16 @@
                     chatMessages.style.display = 'block';
                     sessionSelection.style.display = 'none';
                     
-                    // Show input area, send button, and suggestions when in chat mode
+                    // Show input area, send button when in chat mode
                     const inputContainer = this.input.closest('.input-container');
                     const sendButton = this.sendButton;
-                    const suggestions = this.suggestions;
                     if (inputContainer) inputContainer.style.display = 'flex';
                     if (sendButton) sendButton.style.display = 'block';
-                    if (suggestions) suggestions.style.display = 'flex';
+                    
+                    // Only show suggestions if they should be shown based on current state
+                    if (this.shouldShowSuggestions(false)) { // Let session logic handle this properly
+                        this.showSuggestions();
+                    }
                 }
             }
 
@@ -1839,6 +1876,10 @@
                     // Clear the chat interface and show welcome message
                     this.messages.innerHTML = '';
                     this.addMessage(this.config.get('texts.messages.welcomeMessage', '👋 Hello! How can I help you today?'), 'bot');
+                    
+                    // Reset suggestion state for new chat
+                    this.suggestionsHidden = false;
+                    this.showSuggestions();
                     
                     // Close session selection and show chat
                     this.closeHistoryPanel();
@@ -1878,16 +1919,27 @@
                     
                     // Clear current chat and load history
                     this.messages.innerHTML = '';
+                    
+                    // Check if this session has any user messages (not just bot messages)
+                    const hasUserMessages = messages.some(msg => msg.role === 'user');
+                    
                     if (messages.length === 0) {
                         this.addMessage(this.config.get('texts.messages.welcomeMessage', '👋 Hello! How can I help you today?'), 'bot');
-                        // Show suggestions only for truly empty chats
-                        this.suggestions.style.display = 'flex';
+                        // Reset suggestion state for truly empty sessions
+                        this.suggestionsHidden = false;
+                        this.showSuggestions();
                     } else {
                         for (const msg of messages) {
                             this.addMessage(msg.content, msg.role);
                         }
-                        // Hide suggestions for sessions that already have messages
-                        this.suggestions.style.display = 'none';
+                        // Hide suggestions for sessions with user messages
+                        if (hasUserMessages) {
+                            this.permanentlyHideSuggestions();
+                        } else {
+                            // Session has only bot messages - still show suggestions
+                            this.suggestionsHidden = false;
+                            this.showSuggestions();
+                        }
                     }
                     
                     this.scrollToBottom();
@@ -2016,8 +2068,7 @@
                 // Clear input and permanently hide suggestions after first message
                 this.input.value = '';
                 this.input.style.height = 'auto';
-                this.suggestions.style.display = 'none';
-                this.suggestions.remove(); // Completely remove suggestions from DOM
+                this.permanentlyHideSuggestions();
 
                 // Add user message and save to storage
                 this.addMessage(message, 'user');
