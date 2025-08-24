@@ -1185,6 +1185,61 @@
             }
 
             async createSession() {
+                try {
+                    // First, try to create server-side session
+                    const response = await fetch('/api/v1/session/create', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        credentials: 'include', // Include cookies
+                        body: JSON.stringify({
+                            origin_domain: window.location.hostname,
+                            page_url: window.location.href
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const serverSession = await response.json();
+                        const sessionId = serverSession.session_id;
+                        
+                        console.log('✅ Server-side session created:', sessionId);
+                        
+                        // Create client-side session with server session ID
+                        const session = {
+                            id: sessionId,
+                            createdAt: new Date(),
+                            updatedAt: new Date(),
+                            metadata: {
+                                userAgent: navigator.userAgent,
+                                origin: window.location.origin,
+                                pageUrl: window.location.href
+                            },
+                            isActive: true
+                        };
+
+                        if (this.db && this.db.transaction) {
+                            const transaction = this.db.transaction(['sessions'], 'readwrite');
+                            const store = transaction.objectStore('sessions');
+                            await new Promise((resolve, reject) => {
+                                const request = store.put(session);
+                                request.onsuccess = () => resolve();
+                                request.onerror = () => reject(request.error);
+                            });
+                        } else {
+                            localStorage.setItem('session_' + sessionId, JSON.stringify(session));
+                            localStorage.setItem('current_session_id', sessionId);
+                        }
+
+                        this.currentSessionId = sessionId;
+                        return sessionId;
+                    }
+                } catch (error) {
+                    console.error('❌ Server session creation failed:', error);
+                }
+                
+                // Fallback: create client-only session
+                console.log('⚠️ Creating fallback client-only session');
                 const sessionId = this.generateSessionId();
                 const session = {
                     id: sessionId,
@@ -1215,7 +1270,7 @@
                     this.currentSessionId = sessionId;
                     return sessionId;
                 } catch (error) {
-                    console.error('Failed to create session:', error);
+                    console.error('Failed to create fallback session:', error);
                     return null;
                 }
             }
@@ -1779,7 +1834,7 @@
                     this.cleanupPendingMessage(sessionId);
                 };
                 
-                return eventSource;
+                return connectionInfo;
             }
             
             async restoreActiveConnections() {
@@ -2556,22 +2611,18 @@
                 let lastChunkTime = startTime;
 
                 try {
-                    // 🚀 BACKGROUND ASYNC: Start background collection first
+                    // 🚀 SINGLE REQUEST: Start background collection and use it for both background and foreground
+                    console.log('🔗 Starting single SSE connection for both foreground and background...');
                     const backgroundConnection = await this.backgroundResponseManager.startBackgroundCollection(
                         this.sessionId, 
                         message, 
                         this.API_BASE
                     );
                     
-                    // 🚀 FOREGROUND SSE: Use EventSource for real-time streaming display
-                    const sseUrl = `${this.API_BASE}/api/v1/chat/stream?message=${encodeURIComponent(message)}&page_url=${encodeURIComponent(window.location.href)}`;
-                    console.log('🔗 Attempting foreground SSE connection to:', sseUrl);
+                    // Get the EventSource from background connection for foreground display
+                    const eventSource = backgroundConnection.eventSource;
                     
-                    const eventSource = new EventSource(sseUrl, {
-                        withCredentials: true
-                    });
-                    
-                    console.log('✅ EventSource created, waiting for connection...');
+                    console.log('✅ Using background EventSource for foreground display (no duplicate requests)...');
                     
                     let streamedText = '';
                     let botMessageElement = null;
@@ -2661,6 +2712,11 @@
                             try {
                                 const parsed = JSON.parse(data);
                                 console.log('✅ Complete JSON parsed:', parsed.type, parsed.content ? `"${parsed.content}"` : '(no content)');
+                                
+                                // DEBUG: Show full parsed object if it has error
+                                if (parsed.error) {
+                                    console.log('🚨 ERROR OBJECT:', JSON.stringify(parsed, null, 2));
+                                }
                                 
                                 if (parsed.type === 'begin') {
                                     console.log('🏁 Stream beginning');
