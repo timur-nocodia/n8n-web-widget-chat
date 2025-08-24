@@ -323,6 +323,10 @@ async def stream_chat_sqlite(
     n8n_token = jwt.encode(n8n_payload, SESSION_SECRET, algorithm="HS256")
 
     async def stream_response():
+        # Add connection to tracking set
+        connection_id = f"{session_id}_{int(time.time())}"
+        app.state.active_connections.add(connection_id)
+        
         try:
             headers = {"Content-Type": "application/json"}
 
@@ -406,6 +410,9 @@ async def stream_chat_sqlite(
         except Exception as e:
             yield f"data: Error: {str(e)}\n\n"
             yield "data: [DONE]\n\n"
+        finally:
+            # Remove connection from tracking set
+            app.state.active_connections.discard(connection_id)
 
     return StreamingResponse(
         stream_response(),
@@ -535,10 +542,50 @@ async def cleanup_old_data():
 @app.on_event("startup")
 async def startup_event():
     await init_database()
-    # Start cleanup task
-    asyncio.create_task(cleanup_old_data())
-    print(f"🚀 SQLite Chat Proxy started on {API_HOST}:{API_PORT}")
-    print(f"💾 Database: {DB_PATH}")
+    app.state.start_time = time.time()
+    app.state.active_connections = set()  # Track active SSE connections
+    app.state.cleanup_task = asyncio.create_task(cleanup_old_data())
+    logger.info(f"🚀 SQLite Chat Proxy started with database: {DB_PATH}")
+
+
+@app.on_event("shutdown") 
+async def shutdown_event():
+    logger.info("🛑 Graceful shutdown initiated...")
+    
+    # Cancel cleanup task
+    if hasattr(app.state, 'cleanup_task') and not app.state.cleanup_task.done():
+        app.state.cleanup_task.cancel()
+        try:
+            await app.state.cleanup_task
+        except asyncio.CancelledError:
+            logger.info("🧹 Cleanup task cancelled")
+    
+    # Wait for active SSE connections to finish
+    if hasattr(app.state, 'active_connections'):
+        active_count = len(app.state.active_connections)
+        if active_count > 0:
+            logger.info(f"⏳ Waiting for {active_count} active SSE connections to complete...")
+            
+            for i in range(30):  # Wait up to 30 seconds
+                if len(app.state.active_connections) == 0:
+                    break
+                await asyncio.sleep(1)
+                
+            remaining = len(app.state.active_connections)
+            if remaining > 0:
+                logger.warning(f"⚠️  {remaining} connections still active after 30s timeout")
+            else:
+                logger.info("✅ All SSE connections completed gracefully")
+    
+    # Close database connections
+    try:
+        # SQLite connections are closed per-request, so just log completion
+        logger.info("🗄️  Database connections closed")
+    except Exception as e:
+        logger.warning(f"Database cleanup warning: {e}")
+    
+    uptime = time.time() - getattr(app.state, 'start_time', time.time())
+    logger.info(f"✅ SQLite Chat Proxy shutdown complete (uptime: {uptime:.1f}s)")
 
 
 if __name__ == "__main__":

@@ -271,6 +271,10 @@ async def stream_chat(
     )
 
     async def stream_from_n8n():
+        # Add connection to tracking set
+        connection_id = f"{session_id}_{int(time.time())}"
+        app.state.active_connections.add(connection_id)
+        
         try:
             # TIMESTAMP BASELINE - Lock message send time
             request_start = time.time()
@@ -373,6 +377,9 @@ async def stream_chat(
             logger.error(f"Streaming error: {e}")
             yield f"data: Error: {str(e)}\n\n"
             yield "data: [DONE]\n\n"
+        finally:
+            # Remove connection from tracking set
+            app.state.active_connections.discard(connection_id)
 
     return StreamingResponse(
         stream_from_n8n(),
@@ -448,10 +455,46 @@ async def serve_widget_files(file_path: str):
 @app.on_event("startup")
 async def startup_event():
     app.state.start_time = time.time()
+    app.state.active_connections = set()  # Track active SSE connections
     logger.info(f"🚀 Stateless Chat Proxy started on {API_HOST}:{API_PORT}")
     logger.info(f"📡 n8n webhook: {N8N_WEBHOOK_URL}")
     logger.info(f"🌐 Allowed origins: {ALLOWED_ORIGINS}")
     logger.info(f"⚡ Rate limit: {RATE_LIMIT_PER_MINUTE} requests/minute")
+
+
+# Shutdown event
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("🛑 Graceful shutdown initiated...")
+    
+    # Wait for active SSE connections to finish (up to 30 seconds)
+    if hasattr(app.state, 'active_connections'):
+        active_count = len(app.state.active_connections)
+        if active_count > 0:
+            logger.info(f"⏳ Waiting for {active_count} active SSE connections to complete...")
+            
+            # Give connections time to finish naturally
+            for i in range(30):  # Wait up to 30 seconds
+                if len(app.state.active_connections) == 0:
+                    break
+                await asyncio.sleep(1)
+                
+            remaining = len(app.state.active_connections)
+            if remaining > 0:
+                logger.warning(f"⚠️  {remaining} connections still active after 30s timeout")
+            else:
+                logger.info("✅ All SSE connections completed gracefully")
+    
+    # Clear rate limiting cache
+    request_counts.clear()
+    logger.info("🧹 Cleaned up rate limiting cache")
+    
+    uptime = time.time() - app.state.start_time
+    logger.info(f"✅ Stateless Chat Proxy shutdown complete (uptime: {uptime:.1f}s)")
+
+
+# Import asyncio for shutdown event
+import asyncio
 
 
 if __name__ == "__main__":

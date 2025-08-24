@@ -32,6 +32,9 @@ log_level = os.getenv("LOG_LEVEL", "WARNING")
 logging.basicConfig(level=getattr(logging, log_level))
 logger = logging.getLogger(__name__)
 
+# Server configuration
+API_PORT = int(os.getenv("API_PORT", 8000))
+
 
 class SSEResponse(StreamingResponse):
     """Custom SSE Response that forces immediate flushing of each chunk"""
@@ -183,8 +186,14 @@ def get_session_from_cookie(session_id: Optional[str]) -> Optional[dict]:
     return sessions[session_id]
 
 
-async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict):
+async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict, app_instance=None):
     """Forward message to n8n webhook and yield streaming response"""
+
+    # Track connection if app instance is available
+    connection_id = None
+    if app_instance and hasattr(app_instance.state, 'active_connections'):
+        connection_id = f"{session_data.get('id', 'unknown')}_{int(time.time())}"
+        app_instance.state.active_connections.add(connection_id)
 
     try:
         # Decode JWT to get session context
@@ -347,6 +356,10 @@ async def forward_to_n8n_stream(message: str, jwt_token: str, session_data: dict
         logger.error(f"Error in n8n stream: {str(e)}")
         yield f"data: Error: {str(e)}\n\n".encode("utf-8")
         yield "data: [DONE]\n\n".encode("utf-8")
+    finally:
+        # Remove connection from tracking set
+        if connection_id and app_instance and hasattr(app_instance.state, 'active_connections'):
+            app_instance.state.active_connections.discard(connection_id)
 
 
 @app.get("/")
@@ -570,11 +583,52 @@ async def stream_chat_impl(
 
     jwt_token = create_n8n_jwt_token(session, http_request)
 
-    # Return custom SSE response
-    return SSEResponse(forward_to_n8n_stream(message, jwt_token, session))
+    # Return custom SSE response with app state for connection tracking
+    return SSEResponse(forward_to_n8n_stream(message, jwt_token, session, http_request.app))
 
 
-# No global client cleanup needed since we use fresh clients per request
+# Application lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    app.state.start_time = time.time()
+    app.state.active_connections = set()  # Track active SSE connections
+    logger.info(f"🚀 Production Chat Proxy started on {SERVER_IP}:{API_PORT}")
+    logger.info(f"📡 n8n webhook: {N8N_WEBHOOK_URL}")
+    logger.info(f"🌐 Allowed origins: {', '.join(ALLOWED_ORIGINS)}")
+    logger.info(f"🔑 JWT expiration: {JWT_EXPIRATION_SECONDS} seconds")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("🛑 Graceful shutdown initiated...")
+    
+    # Wait for active SSE connections to finish
+    if hasattr(app.state, 'active_connections'):
+        active_count = len(app.state.active_connections)
+        if active_count > 0:
+            logger.info(f"⏳ Waiting for {active_count} active SSE connections to complete...")
+            
+            for i in range(30):  # Wait up to 30 seconds
+                if len(app.state.active_connections) == 0:
+                    break
+                await asyncio.sleep(1)
+                
+            remaining = len(app.state.active_connections)
+            if remaining > 0:
+                logger.warning(f"⚠️  {remaining} connections still active after 30s timeout")
+            else:
+                logger.info("✅ All SSE connections completed gracefully")
+    
+    # Clear any in-memory state
+    rate_limit_store.clear() if 'rate_limit_store' in globals() else None
+    logger.info("🧹 Cleaned up in-memory state")
+    
+    uptime = time.time() - getattr(app.state, 'start_time', time.time())
+    logger.info(f"✅ Production Chat Proxy shutdown complete (uptime: {uptime:.1f}s)")
+
+
+# Import asyncio for shutdown event  
+import asyncio
 
 
 if __name__ == "__main__":
@@ -587,7 +641,7 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=API_PORT,
         log_level="info",
         # Disable buffering
         limit_concurrency=1000,

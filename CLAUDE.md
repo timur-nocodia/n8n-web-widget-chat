@@ -47,6 +47,10 @@ All modes use:
 ## Common Development Commands
 
 ### Project Setup
+
+python3 -m venv venv && source venv/bin/activate
+
+
 ```bash
 # Setup (creates environment files and virtual environment)
 ./scripts/setup.sh
