@@ -2045,10 +2045,12 @@
                     inputPointerEvents: this.input.style.pointerEvents
                 });
                 
-                // Track timing
+                // TIMESTAMP BASELINE - Lock message send time 
                 const startTime = Date.now();
-                console.log(`⏱️ MESSAGE SENT at ${new Date().toISOString()}`);
+                const baselineTime = startTime;
+                console.log(`🚀 [WIDGET-T0] BASELINE: Message sent at ${startTime}ms`);
                 let firstChunkTime = null;
+                let lastChunkTime = startTime;
 
                 try {
                     // 🚀 REAL SSE: Use EventSource for true real-time streaming without buffering
@@ -2066,7 +2068,7 @@
                     let isFirstChunk = true;
                     let chunkCount = 0;
                     let lastChunkTime = null;
-                    let accumulatedText = '';  // Buffer for all incoming text
+                    // N8N Simple Approach: No buffering needed, each SSE event is complete JSON
                     
                     // No streaming buffer needed - we display text immediately like n8n original
                     // Text will be updated directly in the onmessage handler
@@ -2096,30 +2098,38 @@
                     eventSource.onmessage = (event) => {
                         const data = event.data;
                         const currentTime = Date.now();
-                        const elapsed = currentTime - startTime;
+                        const elapsedFromBaseline = currentTime - baselineTime;
                         chunkCount++;
                         
-                        // Log every chunk with timing
-                        console.log(`📦 Chunk #${chunkCount} at ${elapsed}ms: "${data}" (${data.length} chars)`);
-                        
+                        // Track first chunk timing
                         if (firstChunkTime === null && data !== '[DONE]') {
                             firstChunkTime = currentTime;
-                            const latency = firstChunkTime - startTime;
-                            console.log(`🚨 FIRST TOKEN LATENCY: ${latency}ms (${(latency/1000).toFixed(1)}s)`);
+                            const firstChunkDelay = firstChunkTime - baselineTime;
+                            console.log(`⚡ [WIDGET-FIRST] First chunk at +${firstChunkDelay}ms (TTFT)`);
                         }
                         
-                        // Log time between chunks
-                        if (chunkCount > 1 && lastChunkTime) {
-                            const gap = currentTime - lastChunkTime;
-                            if (gap < 10) {
-                                console.log(`⚡ Chunks arriving in batch (${gap}ms gap) - buffering for progressive reveal`);
-                            }
-                        }
+                        // Calculate inter-chunk delay
+                        const interChunkDelay = currentTime - lastChunkTime;
                         lastChunkTime = currentTime;
+                        
+                        // Precise timestamp logging for each chunk
+                        console.log(`📦 [WIDGET-C${chunkCount.toString().padStart(3, '0')}] Received:+${elapsedFromBaseline}ms | Gap:${interChunkDelay}ms | "${data.length > 20 ? data.substring(0, 20) + '...' : data}" (${data.length}ch)`);
+                        
                         
                         if (data === '[DONE]') {
                             eventSource.close();
                             this.isStreaming = false;
+                            
+                            // FINAL TIMING ANALYSIS
+                            const endTime = Date.now();
+                            const totalDuration = endTime - baselineTime;
+                            const firstChunkDelay = firstChunkTime ? (firstChunkTime - baselineTime) : null;
+                            
+                            console.log(`✅ [WIDGET-END] TIMING ANALYSIS COMPLETE:`);
+                            console.log(`   📊 Total Duration: ${totalDuration}ms (${(totalDuration/1000).toFixed(1)}s)`);
+                            console.log(`   ⚡ First Chunk Delay: ${firstChunkDelay}ms (${firstChunkDelay ? (firstChunkDelay/1000).toFixed(1) : 'N/A'}s)`);
+                            console.log(`   📦 Total Chunks: ${chunkCount}`);
+                            console.log(`   📈 Average Chunks/sec: ${chunkCount > 0 ? ((chunkCount / totalDuration) * 1000).toFixed(2) : 'N/A'}`);
                             
                             // Re-enable send button
                             this.sendButton.disabled = false;
@@ -2135,77 +2145,55 @@
                             
                             // Call completion handler to finalize the message
                             completionHandler();
-                            
-                            console.log(`✅ SSE complete. Total chunks: ${chunkCount}`);
                             return;
                         }
 
                         if (data.trim() !== '') {
-                            let contentText = '';
-                            
-                            // Parse individual JSON objects sent by server
+                            // N8N Simple Approach: Each SSE event contains complete JSON
                             try {
                                 const parsed = JSON.parse(data);
-                                console.log('📋 Parsed JSON:', parsed);
+                                console.log('✅ Complete JSON parsed:', parsed.type, parsed.content ? `"${parsed.content}"` : '(no content)');
                                 
-                                if (parsed.type === 'item' && parsed.content) {
-                                    contentText = parsed.content;
-                                    console.log(`✨ Content extracted: "${contentText}"`);
-                                } else if (parsed.type === 'begin') {
+                                if (parsed.type === 'begin') {
                                     console.log('🏁 Stream beginning');
-                                    lastChunkTime = currentTime;
-                                    return;
+                                    // Initialize message on first begin
+                                    if (isFirstChunk) {
+                                        if (typingElement) {
+                                            typingElement.remove();
+                                            typingElement = null;
+                                        }
+                                        botMessageElement = this.addMessage('', 'bot', true);
+                                        streamedText = ''; // Reset accumulated text
+                                        
+                                        // Scroll to the top of the new AI message for optimal reading
+                                        setTimeout(() => {
+                                            this.scrollToMessageTop(botMessageElement);
+                                        }, 50);
+                                        
+                                        isFirstChunk = false;
+                                    }
+                                    
+                                } else if (parsed.type === 'item' && parsed.content) {
+                                    // N8N Pattern: Immediate content accumulation + DOM update
+                                    streamedText += parsed.content;
+                                    console.log(`💎 Content accumulated: "${parsed.content}" | Total: "${streamedText}"`);
+                                    
+                                    // Immediate DOM update for true real-time effect
+                                    if (botMessageElement) {
+                                        const bubbleElement = botMessageElement.querySelector('.message-bubble');
+                                        if (bubbleElement) {
+                                            bubbleElement.textContent = streamedText;
+                                            this.scrollToBottom();
+                                        }
+                                    }
+                                    
                                 } else if (parsed.type === 'end') {
                                     console.log('🏁 Stream ending');
-                                    lastChunkTime = currentTime;
-                                    return;
                                 }
+                                
                             } catch (e) {
-                                // If JSON parsing fails, treat as plain text
-                                console.log('📄 Plain text data:', data);
-                                contentText = data;
-                            }
-                            
-                            if (!contentText.trim()) {
-                                lastChunkTime = currentTime;
+                                console.error('❌ JSON parse error:', e, 'Data:', data);
                                 return;
-                            }
-                            
-                            // Remove typing indicator on first chunk
-                            if (isFirstChunk) {
-                                if (typingElement) {
-                                    typingElement.remove();
-                                    typingElement = null;
-                                }
-                                botMessageElement = this.addMessage('', 'bot', true);
-                                
-                                // Scroll to the top of the new AI message for optimal reading
-                                setTimeout(() => {
-                                    this.scrollToMessageTop(botMessageElement);
-                                }, 50); // Small delay to ensure DOM has updated
-                                
-                                isFirstChunk = false;
-                            }
-                            
-                            // Unescape newlines that were escaped for SSE transport
-                            const unescapedData = contentText.replace(/\\n/g, '\n').replace(/\\r/g, '\r');
-                            
-                            // Accumulate text for final rendering
-                            streamedText += unescapedData;
-                            
-                            // IMMEDIATE INCREMENTAL DISPLAY - Append each chunk as it arrives
-                            if (botMessageElement) {
-                                const bubbleElement = botMessageElement.querySelector('.message-bubble');
-                                if (bubbleElement) {
-                                    // Create text node for the new chunk to preserve proper rendering
-                                    const textNode = document.createTextNode(unescapedData);
-                                    bubbleElement.appendChild(textNode);
-                                    
-                                    // Force immediate browser repaint
-                                    void bubbleElement.offsetHeight;
-                                    
-                                    this.scrollToBottom();
-                                }
                             }
                         }
                     };
