@@ -61,6 +61,22 @@
         "timestampFormat": "24h",
         "showDate": true,
         "dateFormat": "short"
+      },
+      "backgroundActivity": {
+        "responseInProgress": "Response in progress...",
+        "backgroundCollectionStarted": "Starting background collection for session",
+        "backgroundConnectionEstablished": "Background SSE connection established for session",
+        "backgroundCollectionCompleted": "Background collection completed for session", 
+        "backgroundResponseSaved": "Background response saved to storage",
+        "backgroundStreamBeginning": "Background stream beginning for session",
+        "backgroundStreamEnding": "Background stream ending for session",
+        "backgroundConnectionError": "Background SSE error for session",
+        "backgroundConnectionClosed": "Closed background connection for session",
+        "backgroundConnectionsAllClosed": "Closed all background connections",
+        "restoringBackgroundConnection": "Restoring background connection for session",
+        "foundCompletedBackgroundResponse": "Found completed background response for session",
+        "refreshedCurrentSessionMessages": "Refreshed current session messages",
+        "foregroundConnectionClosed": "Closed foreground SSE connection, background continues"
       }
     },
     "input": {
@@ -90,6 +106,21 @@
       "openIcon": "💬",
       "closeIcon": "✕",
       "sendIcon": "➤"
+    },
+    "notifications": {
+      "badge": {
+        "enabled": true,
+        "text": "!",
+        "ariaLabel": "New messages available"
+      },
+      "indicators": {
+        "backgroundActivity": {
+          "enabled": true,
+          "icon": "⏳",
+          "tooltip": "Response in progress...",
+          "ariaLabel": "Response in progress"
+        }
+      }
     }
   },
   "behavior": {
@@ -111,6 +142,13 @@
     "scrollBehavior": {
       "autoScroll": true,
       "scrollThreshold": 100
+    },
+    "backgroundActivity": {
+      "enabled": true,
+      "checkInterval": 5000,
+      "connectionTimeout": 300000,
+      "enableNotifications": true,
+      "enableVisualIndicators": true
     }
   },
   "localization": {
@@ -132,7 +170,9 @@
     "enableKeyboardShortcuts": true,
     "announceMessages": true,
     "highContrast": false,
-    "focusOutline": true
+    "focusOutline": true,
+    "announceBackgroundActivity": true,
+    "screenReaderSupport": true
   },
   "mobile": {
     "enabled": true,
